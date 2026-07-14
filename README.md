@@ -36,6 +36,6 @@ uv run pytest
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run build
 ```
