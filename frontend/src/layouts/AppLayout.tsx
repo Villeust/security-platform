@@ -3,6 +3,7 @@ import {
   DashboardOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
 import { Layout, Menu, Typography } from 'antd';
@@ -16,6 +17,7 @@ import { useAppTheme } from '../context/ThemeContext';
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
   { key: '/applications', icon: <AppstoreOutlined />, label: 'Applications' },
+  { key: '/admin', icon: <SafetyCertificateOutlined />, label: 'Администрирование' },
   { key: '/settings', icon: <SettingOutlined />, label: 'Settings' },
 ];
 
@@ -24,6 +26,7 @@ export function AppLayout({ children }: PropsWithChildren) {
   const location = useLocation();
   const navigate = useNavigate();
   const { appName } = useAppTheme();
+  const selectedKey = menuItems.find((item) => location.pathname === item.key || (item.key !== '/' && location.pathname.startsWith(item.key)))?.key ?? '/';
 
   return (
     <Layout className="sp-shell">
@@ -41,7 +44,7 @@ export function AppLayout({ children }: PropsWithChildren) {
         <Menu
           theme="dark"
           mode="inline"
-          selectedKeys={[location.pathname]}
+          selectedKeys={[selectedKey]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
           className="sp-menu"
