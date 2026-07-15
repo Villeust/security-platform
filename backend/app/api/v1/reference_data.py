@@ -7,7 +7,9 @@ from sqlalchemy import Select, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_permission
 from app.db.session import get_db
+from app.models.admin import User
 from app.models.reference_data import (
     City,
     Contractor,
@@ -162,6 +164,7 @@ def get_unique_fields(model: type[Any]) -> tuple[str, ...]:
 )
 def list_cities(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("reference_data.view")),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     is_active: bool | None = Query(default=None),
@@ -177,22 +180,22 @@ def list_cities(
     status_code=status.HTTP_201_CREATED,
     summary="Create city",
 )
-def create_city(payload: CityCreate, db: Session = Depends(get_db)) -> City:
+def create_city(payload: CityCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> City:
     return create_record(db, City, payload)
 
 
 @router.get("/cities/{item_id}", response_model=CityResponse, summary="Get city by id")
-def get_city(item_id: UUID, db: Session = Depends(get_db)) -> City:
+def get_city(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.view"))) -> City:
     return get_object_or_404(db, City, item_id)
 
 
 @router.patch("/cities/{item_id}", response_model=CityResponse, summary="Update city")
-def update_city(item_id: UUID, payload: CityUpdate, db: Session = Depends(get_db)) -> City:
+def update_city(item_id: UUID, payload: CityUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> City:
     return update_record(db, City, item_id, payload)
 
 
 @router.delete("/cities/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete city")
-def delete_city(item_id: UUID, db: Session = Depends(get_db)) -> Response:
+def delete_city(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Response:
     if has_references(db, [(Facility, Facility.city_id, item_id), (ContractorResponsibility, ContractorResponsibility.city_id, item_id)]):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="City is referenced by other records")
     return delete_record(db, City, item_id)
@@ -206,6 +209,7 @@ def delete_city(item_id: UUID, db: Session = Depends(get_db)) -> Response:
 )
 def list_facilities(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("reference_data.view")),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     is_active: bool | None = Query(default=None),
@@ -219,25 +223,25 @@ def list_facilities(
 
 
 @router.post("/facilities", response_model=FacilityResponse, status_code=status.HTTP_201_CREATED, summary="Create facility")
-def create_facility(payload: FacilityCreate, db: Session = Depends(get_db)) -> Facility:
+def create_facility(payload: FacilityCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Facility:
     ensure_exists(db, City, payload.city_id, "City")
     return create_record(db, Facility, payload)
 
 
 @router.get("/facilities/{item_id}", response_model=FacilityResponse, summary="Get facility by id")
-def get_facility(item_id: UUID, db: Session = Depends(get_db)) -> Facility:
+def get_facility(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.view"))) -> Facility:
     return get_object_or_404(db, Facility, item_id)
 
 
 @router.patch("/facilities/{item_id}", response_model=FacilityResponse, summary="Update facility")
-def update_facility(item_id: UUID, payload: FacilityUpdate, db: Session = Depends(get_db)) -> Facility:
+def update_facility(item_id: UUID, payload: FacilityUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Facility:
     if payload.city_id is not None:
         ensure_exists(db, City, payload.city_id, "City")
     return update_record(db, Facility, item_id, payload)
 
 
 @router.delete("/facilities/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete facility")
-def delete_facility(item_id: UUID, db: Session = Depends(get_db)) -> Response:
+def delete_facility(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Response:
     if has_references(db, [(Premise, Premise.facility_id, item_id), (ContractorResponsibility, ContractorResponsibility.facility_id, item_id)]):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Facility is referenced by other records")
     return delete_record(db, Facility, item_id)
@@ -251,6 +255,7 @@ def delete_facility(item_id: UUID, db: Session = Depends(get_db)) -> Response:
 )
 def list_premises(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("reference_data.view")),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     is_active: bool | None = Query(default=None),
@@ -268,25 +273,25 @@ def list_premises(
 
 
 @router.post("/premises", response_model=PremiseResponse, status_code=status.HTTP_201_CREATED, summary="Create premise")
-def create_premise(payload: PremiseCreate, db: Session = Depends(get_db)) -> Premise:
+def create_premise(payload: PremiseCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Premise:
     ensure_exists(db, Facility, payload.facility_id, "Facility")
     return create_record(db, Premise, payload)
 
 
 @router.get("/premises/{item_id}", response_model=PremiseResponse, summary="Get premise by id")
-def get_premise(item_id: UUID, db: Session = Depends(get_db)) -> Premise:
+def get_premise(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.view"))) -> Premise:
     return get_object_or_404(db, Premise, item_id)
 
 
 @router.patch("/premises/{item_id}", response_model=PremiseResponse, summary="Update premise")
-def update_premise(item_id: UUID, payload: PremiseUpdate, db: Session = Depends(get_db)) -> Premise:
+def update_premise(item_id: UUID, payload: PremiseUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Premise:
     if payload.facility_id is not None:
         ensure_exists(db, Facility, payload.facility_id, "Facility")
     return update_record(db, Premise, item_id, payload)
 
 
 @router.delete("/premises/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete premise")
-def delete_premise(item_id: UUID, db: Session = Depends(get_db)) -> Response:
+def delete_premise(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Response:
     return delete_record(db, Premise, item_id)
 
 
@@ -298,6 +303,7 @@ def delete_premise(item_id: UUID, db: Session = Depends(get_db)) -> Response:
 )
 def list_contractors(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("reference_data.view")),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     is_active: bool | None = Query(default=None),
@@ -308,22 +314,22 @@ def list_contractors(
 
 
 @router.post("/contractors", response_model=ContractorResponse, status_code=status.HTTP_201_CREATED, summary="Create contractor")
-def create_contractor(payload: ContractorCreate, db: Session = Depends(get_db)) -> Contractor:
+def create_contractor(payload: ContractorCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Contractor:
     return create_record(db, Contractor, payload)
 
 
 @router.get("/contractors/{item_id}", response_model=ContractorResponse, summary="Get contractor by id")
-def get_contractor(item_id: UUID, db: Session = Depends(get_db)) -> Contractor:
+def get_contractor(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.view"))) -> Contractor:
     return get_object_or_404(db, Contractor, item_id)
 
 
 @router.patch("/contractors/{item_id}", response_model=ContractorResponse, summary="Update contractor")
-def update_contractor(item_id: UUID, payload: ContractorUpdate, db: Session = Depends(get_db)) -> Contractor:
+def update_contractor(item_id: UUID, payload: ContractorUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Contractor:
     return update_record(db, Contractor, item_id, payload)
 
 
 @router.delete("/contractors/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete contractor")
-def delete_contractor(item_id: UUID, db: Session = Depends(get_db)) -> Response:
+def delete_contractor(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Response:
     if has_references(db, [(ContractorResponsibility, ContractorResponsibility.contractor_id, item_id)]):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Contractor is referenced by other records")
     return delete_record(db, Contractor, item_id)
@@ -337,6 +343,7 @@ def delete_contractor(item_id: UUID, db: Session = Depends(get_db)) -> Response:
 )
 def list_work_types(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("reference_data.view")),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     is_active: bool | None = Query(default=None),
@@ -347,22 +354,22 @@ def list_work_types(
 
 
 @router.post("/work-types", response_model=WorkTypeResponse, status_code=status.HTTP_201_CREATED, summary="Create work type")
-def create_work_type(payload: WorkTypeCreate, db: Session = Depends(get_db)) -> WorkType:
+def create_work_type(payload: WorkTypeCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> WorkType:
     return create_record(db, WorkType, payload)
 
 
 @router.get("/work-types/{item_id}", response_model=WorkTypeResponse, summary="Get work type by id")
-def get_work_type(item_id: UUID, db: Session = Depends(get_db)) -> WorkType:
+def get_work_type(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.view"))) -> WorkType:
     return get_object_or_404(db, WorkType, item_id)
 
 
 @router.patch("/work-types/{item_id}", response_model=WorkTypeResponse, summary="Update work type")
-def update_work_type(item_id: UUID, payload: WorkTypeUpdate, db: Session = Depends(get_db)) -> WorkType:
+def update_work_type(item_id: UUID, payload: WorkTypeUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> WorkType:
     return update_record(db, WorkType, item_id, payload)
 
 
 @router.delete("/work-types/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete work type")
-def delete_work_type(item_id: UUID, db: Session = Depends(get_db)) -> Response:
+def delete_work_type(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Response:
     if has_references(db, [(ContractorResponsibility, ContractorResponsibility.work_type_id, item_id)]):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work type is referenced by other records")
     return delete_record(db, WorkType, item_id)
@@ -376,6 +383,7 @@ def delete_work_type(item_id: UUID, db: Session = Depends(get_db)) -> Response:
 )
 def list_contractor_responsibilities(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("reference_data.view")),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     is_active: bool | None = Query(default=None),
@@ -407,6 +415,7 @@ def list_contractor_responsibilities(
 def create_contractor_responsibility(
     payload: ContractorResponsibilityCreate,
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("reference_data.manage")),
 ) -> ContractorResponsibility:
     ensure_responsibility_refs(db, payload.model_dump())
     return create_record(db, ContractorResponsibility, payload)
@@ -430,6 +439,7 @@ def update_contractor_responsibility(
     item_id: UUID,
     payload: ContractorResponsibilityUpdate,
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("reference_data.manage")),
 ) -> ContractorResponsibility:
     ensure_responsibility_refs(db, payload.model_dump(exclude_unset=True))
     return update_record(db, ContractorResponsibility, item_id, payload)
@@ -440,7 +450,7 @@ def update_contractor_responsibility(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete contractor responsibility",
 )
-def delete_contractor_responsibility(item_id: UUID, db: Session = Depends(get_db)) -> Response:
+def delete_contractor_responsibility(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Response:
     return delete_record(db, ContractorResponsibility, item_id)
 
 

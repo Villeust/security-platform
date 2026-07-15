@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { Button, Card, EmptyState, ErrorState, Loader, PageHeader, SearchBar, Section, Table } from '../../components/design-system';
+import { useAuth } from '../../context/AuthContext';
 import { RequestStatusBadge } from './components/RequestStatusBadge';
 import { useReferenceData } from './hooks/useReferenceData';
 import { useRequests } from './hooks/useRequests';
@@ -24,6 +25,7 @@ const requestStatuses: RequestStatus[] = ['DRAFT', 'NEW', 'PARTIALLY_ASSIGNED', 
 
 export function ContractorRequestsListPage() {
   const navigate = useNavigate();
+  const auth = useAuth();
   const referenceData = useReferenceData();
   const [filters, setFilters] = useState<Filters>({});
   const requestParams: RequestListParams = useMemo(
@@ -96,9 +98,11 @@ export function ContractorRequestsListPage() {
             <Button icon={<ReloadOutlined />} onClick={() => reload()}>
               Обновить
             </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/applications/contractor-requests/new')}>
-              Создать заявку
-            </Button>
+            {auth.hasPermission('requests.create') ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/applications/contractor-requests/new')}>
+                Создать заявку
+              </Button>
+            ) : null}
           </Space>
         }
       />

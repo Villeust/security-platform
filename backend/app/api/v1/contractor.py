@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import get_current_contractor_id
+from app.api.deps import ContractorAuthContext, require_contractor_permission
 from app.db.session import get_db
 from app.models.reference_data import Contractor
 from app.models.requests import (
@@ -65,12 +65,12 @@ CONTRACTOR_VISIBLE_EVENTS = {
 
 def serialize_contractor_request(
     request: ContractorRequest,
-    contractor_id: UUID,
+    contractor_ids: set[UUID],
 ) -> ContractorRequestListResponse:
     own_assignments = [
         ContractorAssignmentResponse.model_validate(assignment)
         for assignment in request.assignments
-        if assignment.contractor_id == contractor_id
+        if assignment.contractor_id in contractor_ids
     ]
     return ContractorRequestListResponse(
         id=request.id,
@@ -88,7 +88,7 @@ def serialize_contractor_request(
         completed_at=request.completed_at,
         closed_at=request.closed_at,
         status=request.status,
-        work_type_ids=[assignment.work_type_id for assignment in request.assignments if assignment.contractor_id == contractor_id],
+        work_type_ids=[assignment.work_type_id for assignment in request.assignments if assignment.contractor_id in contractor_ids],
         assignments=own_assignments,
         created_at=request.created_at,
         updated_at=request.updated_at,
@@ -136,16 +136,23 @@ def serialize_contractor_attachment(attachment) -> RequestAttachmentResponse:
     )
 
 
-def get_owned_request(db: Session, request_id: UUID, contractor_id: UUID) -> ContractorRequest:
+def get_owned_request(db: Session, request_id: UUID, contractor_ids: set[UUID]) -> ContractorRequest:
     request = db.scalar(
         select(ContractorRequest)
         .join(RequestAssignment)
-        .where(ContractorRequest.id == request_id, RequestAssignment.contractor_id == contractor_id)
+        .where(ContractorRequest.id == request_id, RequestAssignment.contractor_id.in_(contractor_ids))
         .options(selectinload(ContractorRequest.assignments), selectinload(ContractorRequest.work_types))
     )
     if request is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
     return request
+
+
+def contractor_id_for_request(request: ContractorRequest, context: ContractorAuthContext) -> UUID:
+    for assignment in request.assignments:
+        if assignment.contractor_id in context.contractor_ids:
+            return assignment.contractor_id
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contractor context not found")
 
 
 @router.get(
@@ -155,49 +162,46 @@ def get_owned_request(db: Session, request_id: UUID, contractor_id: UUID) -> Con
 )
 def list_contractor_requests(
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.view")),
 ) -> list[ContractorRequestListResponse]:
-    ensure_contractor_exists(db, contractor_id)
     requests = db.scalars(
         select(ContractorRequest)
         .join(RequestAssignment)
-        .where(RequestAssignment.contractor_id == contractor_id)
+        .where(RequestAssignment.contractor_id.in_(context.contractor_ids))
         .options(selectinload(ContractorRequest.assignments), selectinload(ContractorRequest.work_types))
         .order_by(ContractorRequest.created_at.desc())
     ).unique().all()
-    return [serialize_contractor_request(request, contractor_id) for request in requests]
+    return [serialize_contractor_request(request, context.contractor_ids) for request in requests]
 
 
 @router.get("/requests/{request_id}", response_model=ContractorRequestListResponse, summary="Get contractor-visible request")
 def get_contractor_request(
     request_id: UUID,
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.view")),
 ) -> ContractorRequestListResponse:
-    ensure_contractor_exists(db, contractor_id)
-    return serialize_contractor_request(get_owned_request(db, request_id, contractor_id), contractor_id)
+    return serialize_contractor_request(get_owned_request(db, request_id, context.contractor_ids), context.contractor_ids)
 
 
 @router.post("/requests/{request_id}/accept", response_model=ContractorRequestListResponse, summary="Accept request assignments")
 def accept_contractor_request(
     request_id: UUID,
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.accept")),
 ) -> ContractorRequestListResponse:
-    ensure_contractor_exists(db, contractor_id)
-    request = get_owned_request(db, request_id, contractor_id)
+    request = get_owned_request(db, request_id, context.contractor_ids)
     for assignment in request.assignments:
-        if assignment.contractor_id == contractor_id and assignment.status == AssignmentStatus.ASSIGNED:
+        if assignment.contractor_id in context.contractor_ids and assignment.status == AssignmentStatus.ASSIGNED:
             change_assignment_status(
                 db,
                 assignment,
                 AssignmentStatus.ACCEPTED,
                 actor_type=RequestHistoryActorType.CONTRACTOR_USER,
-                actor_id=contractor_id,
+                actor_id=context.actor_id,
                 commit=False,
             )
     db.commit()
-    return serialize_contractor_request(get_owned_request(db, request_id, contractor_id), contractor_id)
+    return serialize_contractor_request(get_owned_request(db, request_id, context.contractor_ids), context.contractor_ids)
 
 
 @router.post(
@@ -209,14 +213,13 @@ def update_assignment_status(
     assignment_id: UUID,
     payload: AssignmentStatusUpdate,
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.update_status")),
 ) -> ContractorAssignmentResponse:
-    ensure_contractor_exists(db, contractor_id)
     assignment = db.scalar(
         select(RequestAssignment)
         .where(
             RequestAssignment.id == assignment_id,
-            RequestAssignment.contractor_id == contractor_id,
+            RequestAssignment.contractor_id.in_(context.contractor_ids),
         )
         .options(selectinload(RequestAssignment.request).selectinload(ContractorRequest.assignments), selectinload(RequestAssignment.request).selectinload(ContractorRequest.work_types))
     )
@@ -227,7 +230,7 @@ def update_assignment_status(
         assignment,
         payload.status,
         actor_type=RequestHistoryActorType.CONTRACTOR_USER,
-        actor_id=contractor_id,
+        actor_id=context.actor_id,
         comment=payload.comment,
     )
     return ContractorAssignmentResponse.model_validate(assignment)
@@ -241,9 +244,9 @@ def update_assignment_status(
 def get_contractor_request_history(
     request_id: UUID,
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.view")),
 ) -> list[RequestHistoryItem]:
-    get_owned_request(db, request_id, contractor_id)
+    get_owned_request(db, request_id, context.contractor_ids)
     history = db.scalars(select(RequestHistory).where(RequestHistory.request_id == request_id).order_by(RequestHistory.created_at.asc())).all()
     visible: list[RequestHistoryItem] = []
     for item in history:
@@ -282,10 +285,9 @@ def get_contractor_request_history(
 def list_contractor_request_comments(
     request_id: UUID,
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.view")),
 ) -> list[RequestCommentResponse]:
-    ensure_contractor_exists(db, contractor_id)
-    request = get_owned_request(db, request_id, contractor_id)
+    request = get_owned_request(db, request_id, context.contractor_ids)
     return [serialize_contractor_comment(comment) for comment in list_contractor_comments(db, request)]
 
 
@@ -294,10 +296,10 @@ def create_contractor_request_comment(
     request_id: UUID,
     payload: RequestCommentCreate,
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.comments.create")),
 ) -> RequestCommentResponse:
-    ensure_contractor_exists(db, contractor_id)
-    request = get_owned_request(db, request_id, contractor_id)
+    request = get_owned_request(db, request_id, context.contractor_ids)
+    contractor_id = contractor_id_for_request(request, context)
     return serialize_contractor_comment(create_contractor_comment(db, request, payload, contractor_id))
 
 
@@ -307,10 +309,10 @@ def update_contractor_request_comment(
     comment_id: UUID,
     payload: RequestCommentUpdate,
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.comments.create")),
 ) -> RequestCommentResponse:
-    ensure_contractor_exists(db, contractor_id)
-    request = get_owned_request(db, request_id, contractor_id)
+    request = get_owned_request(db, request_id, context.contractor_ids)
+    contractor_id = contractor_id_for_request(request, context)
     comment = get_comment_or_404(db, request_id, comment_id)
     return serialize_contractor_comment(update_comment(db, request, comment, payload, RequestHistoryActorType.CONTRACTOR_USER, contractor_id, contractor_id=contractor_id))
 
@@ -320,10 +322,10 @@ def delete_contractor_request_comment(
     request_id: UUID,
     comment_id: UUID,
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.comments.create")),
 ) -> RequestCommentResponse:
-    ensure_contractor_exists(db, contractor_id)
-    request = get_owned_request(db, request_id, contractor_id)
+    request = get_owned_request(db, request_id, context.contractor_ids)
+    contractor_id = contractor_id_for_request(request, context)
     comment = get_comment_or_404(db, request_id, comment_id)
     return serialize_contractor_comment(delete_comment(db, request, comment, RequestHistoryActorType.CONTRACTOR_USER, contractor_id, contractor_id=contractor_id))
 
@@ -332,10 +334,9 @@ def delete_contractor_request_comment(
 def list_contractor_request_attachments(
     request_id: UUID,
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.view")),
 ) -> list[RequestAttachmentResponse]:
-    ensure_contractor_exists(db, contractor_id)
-    request = get_owned_request(db, request_id, contractor_id)
+    request = get_owned_request(db, request_id, context.contractor_ids)
     return [serialize_contractor_attachment(attachment) for attachment in list_contractor_attachments(db, request)]
 
 
@@ -348,10 +349,10 @@ async def upload_contractor_request_attachment(
     assignment_id: UUID | None = Form(default=None),
     comment_id: UUID | None = Form(default=None),
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.attachments.upload")),
 ) -> RequestAttachmentResponse:
-    ensure_contractor_exists(db, contractor_id)
-    request = get_owned_request(db, request_id, contractor_id)
+    request = get_owned_request(db, request_id, context.contractor_ids)
+    contractor_id = contractor_id_for_request(request, context)
     attachment = await create_attachment(
         db,
         request,
@@ -359,7 +360,7 @@ async def upload_contractor_request_attachment(
         category,
         visibility,
         RequestHistoryActorType.CONTRACTOR_USER,
-        contractor_id,
+        context.actor_id,
         contractor_id,
         assignment_id,
         comment_id,
@@ -372,10 +373,9 @@ def download_contractor_request_attachment(
     request_id: UUID,
     attachment_id: UUID,
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.view")),
 ) -> FileResponse:
-    ensure_contractor_exists(db, contractor_id)
-    get_owned_request(db, request_id, contractor_id)
+    get_owned_request(db, request_id, context.contractor_ids)
     attachment = get_attachment_or_404(db, request_id, attachment_id)
     ensure_contractor_can_access_attachment(attachment)
     return FileResponse(attachment_file_path(attachment), media_type=attachment.mime_type, filename=attachment.original_filename)
@@ -386,12 +386,11 @@ def delete_contractor_request_attachment(
     request_id: UUID,
     attachment_id: UUID,
     db: Session = Depends(get_db),
-    contractor_id: UUID = Depends(get_current_contractor_id),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.attachments.upload")),
 ) -> RequestAttachmentResponse:
-    ensure_contractor_exists(db, contractor_id)
-    request = get_owned_request(db, request_id, contractor_id)
+    request = get_owned_request(db, request_id, context.contractor_ids)
     attachment = get_attachment_or_404(db, request_id, attachment_id)
     ensure_contractor_can_access_attachment(attachment)
-    if attachment.contractor_id != contractor_id:
+    if attachment.contractor_id not in context.contractor_ids:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
-    return serialize_contractor_attachment(delete_attachment(db, request, attachment, RequestHistoryActorType.CONTRACTOR_USER, contractor_id))
+    return serialize_contractor_attachment(delete_attachment(db, request, attachment, RequestHistoryActorType.CONTRACTOR_USER, context.actor_id))

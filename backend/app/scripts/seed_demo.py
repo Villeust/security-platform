@@ -1,14 +1,16 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.db.session import SessionLocal
+from app.models.admin import AuthSource, ContractorMembership, Role, User, UserRole, UserType
 from app.models.reference_data import City, Contractor, ContractorResponsibility, Facility, Premise, WorkType
 from app.models.requests import ContractorRequest
 from app.schemas.requests import ContractorRequestCreate
+from app.services.rbac_service import seed_rbac
 from app.services.request_service import create_contractor_request
 
 
@@ -22,12 +24,21 @@ DEMO_REQUEST_NUMBERS = {
     "BOTH_ONE": "DEMO-REQ-BOTH-ONE-CONTRACTOR",
     "BOTH_SPLIT": "DEMO-REQ-BOTH-SPLIT-CONTRACTORS",
 }
+DEMO_USERS = {
+    "PLATFORM_ADMIN": ("dev.platform.admin", "Platform Admin", UserType.INTERNAL),
+    "SECURITY_ADMIN": ("dev.security.admin", "Security Admin", UserType.INTERNAL),
+    "SECURITY_OPERATOR": ("dev.security.operator", "Security Operator", UserType.INTERNAL),
+    "CONTRACTOR_MANAGER": ("dev.contractor.manager", "Contractor Manager", UserType.CONTRACTOR),
+    "CONTRACTOR_USER": ("dev.contractor.user", "Contractor User", UserType.CONTRACTOR),
+    "VIEWER": ("dev.viewer", "Viewer", UserType.INTERNAL),
+}
 
 
 @dataclass(frozen=True)
 class SeedResult:
     contractors: dict[str, UUID]
     requests: list[ContractorRequest]
+    users: dict[str, UUID]
 
 
 def get_or_create_city(db: Session) -> City:
@@ -147,6 +158,52 @@ def create_demo_request(
     return request
 
 
+def get_or_create_demo_user(
+    db: Session,
+    role_code: str,
+    contractor_ids: list[UUID] | None = None,
+) -> User:
+    username, display_name, user_type = DEMO_USERS[role_code]
+    user = db.scalar(select(User).where(User.username == username))
+    if user is None:
+        user = User(
+            username=username,
+            email=f"{username}@example.test",
+            display_name=display_name,
+            user_type=user_type,
+            auth_source=AuthSource.LOCAL,
+            is_active=True,
+            is_locked=False,
+        )
+        db.add(user)
+        db.flush()
+    user.display_name = display_name
+    user.user_type = user_type
+    user.is_active = True
+    user.is_locked = False
+
+    role = db.scalar(select(Role).where(Role.code == role_code))
+    if role is None:
+        raise RuntimeError(f"Role {role_code} was not seeded")
+    db.execute(delete(UserRole).where(UserRole.user_id == user.id))
+    db.flush()
+    db.add(UserRole(user_id=user.id, role_id=role.id))
+
+    db.execute(delete(ContractorMembership).where(ContractorMembership.user_id == user.id))
+    db.flush()
+    for index, contractor_id in enumerate(contractor_ids or []):
+        db.add(
+            ContractorMembership(
+                user_id=user.id,
+                contractor_id=contractor_id,
+                is_primary=index == 0,
+                is_active=True,
+            )
+        )
+    db.flush()
+    return user
+
+
 def run_seed(db: Session | None = None) -> SeedResult:
     if settings.environment.lower() in {"production", "prod"}:
         raise RuntimeError("Demo seed is blocked in production environment")
@@ -155,6 +212,7 @@ def run_seed(db: Session | None = None) -> SeedResult:
     session = db or SessionLocal()
     try:
         city = get_or_create_city(session)
+        seed_rbac(session)
         facility = get_or_create_facility(session, city)
         premise = get_or_create_premise(session, facility)
         contractor_access = get_or_create_contractor(session, "Demo Access Contractor", DEMO_CONTRACTOR_ACCESS_CODE)
@@ -211,6 +269,16 @@ def run_seed(db: Session | None = None) -> SeedResult:
 
         if owns_session:
             session.commit()
+        users = {
+            "platform_admin": get_or_create_demo_user(session, "PLATFORM_ADMIN").id,
+            "security_admin": get_or_create_demo_user(session, "SECURITY_ADMIN").id,
+            "security_operator": get_or_create_demo_user(session, "SECURITY_OPERATOR").id,
+            "contractor_manager": get_or_create_demo_user(session, "CONTRACTOR_MANAGER", [contractor_access.id, contractor_cctv.id]).id,
+            "contractor_user": get_or_create_demo_user(session, "CONTRACTOR_USER", [contractor_access.id]).id,
+            "viewer": get_or_create_demo_user(session, "VIEWER").id,
+        }
+        if owns_session:
+            session.commit()
         for request in requests:
             session.refresh(request)
         seeded_requests = [
@@ -224,6 +292,7 @@ def run_seed(db: Session | None = None) -> SeedResult:
                 "cctv_contractor_id": contractor_cctv.id,
             },
             requests=seeded_requests,
+            users=users,
         )
     except Exception:
         session.rollback()
@@ -250,6 +319,10 @@ def print_result(result: SeedResult) -> None:
     print("\nContractor API checks:")
     for contractor_id in result.contractors.values():
         print(f"curl -H \"X-Contractor-Id: {contractor_id}\" http://localhost:8000/api/v1/contractor/requests")
+
+    print("\nDemo users:")
+    for label, user_id in result.users.items():
+        print(f"- {label}: {user_id}")
 
 
 def main() -> None:

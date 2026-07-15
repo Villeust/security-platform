@@ -8,8 +8,9 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.api.deps import get_current_user_stub, require_permission
 from app.db.session import get_db
-from app.models.admin import AdminAuditLog, AuthSource, Role, User, UserType
+from app.models.admin import AdminAuditLog, AuthSource, Permission, Role, User, UserType
 from app.models.reference_data import City, Contractor, ContractorResponsibility, Facility, Premise, WorkType
 from app.schemas.admin import (
     AdminAuditLogResponse,
@@ -19,7 +20,9 @@ from app.schemas.admin import (
     ContractorAdminCreate,
     ContractorAdminResponse,
     ContractorAdminUpdate,
+    PermissionResponse,
     RoleCreate,
+    RolePermissionsUpdate,
     RoleResponse,
     RoleUpdate,
     UserContractorsUpdate,
@@ -28,6 +31,7 @@ from app.schemas.admin import (
     UserRolesUpdate,
     UserUpdate,
 )
+from app.services.rbac_service import get_role_permissions, list_permissions, permission_codes_for_user, set_role_permissions
 from app.schemas.reference_data import (
     CityCreate,
     CityResponse,
@@ -89,6 +93,7 @@ def serialize_user(user: User) -> UserResponse:
         last_login_at=user.last_login_at,
         role_ids=[item.role_id for item in user.roles],
         role_codes=[item.role.code for item in user.roles if item.role is not None],
+        permissions=sorted(permission_codes_for_user(user)),
         contractor_memberships=user.contractor_memberships,
         created_at=user.created_at,
         updated_at=user.updated_at,
@@ -120,18 +125,50 @@ def serialize_role(role: Role) -> RoleResponse:
         is_system=role.is_system,
         is_active=role.is_active,
         users_count=len(role.users),
+        permissions_count=len(role.permissions),
         created_at=role.created_at,
         updated_at=role.updated_at,
     )
 
 
+def serialize_permission(permission: Permission) -> PermissionResponse:
+    return PermissionResponse.model_validate(permission)
+
+
+@router.get("/me", response_model=UserResponse, summary="Get current admin/auth context")
+def admin_me(user: User = Depends(get_current_user_stub)) -> UserResponse:
+    return serialize_user(user)
+
+
+@router.get("/dev-users", response_model=list[UserResponse], summary="List development seed users")
+def admin_dev_users(db: Session = Depends(get_db)) -> list[UserResponse]:
+    if settings.environment.lower() in {"production", "prod"} or not settings.allow_dev_auth_headers:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    users = db.scalars(
+        select(User)
+        .where(User.username.in_([
+            "dev.platform.admin",
+            "dev.security.admin",
+            "dev.security.operator",
+            "dev.contractor.manager",
+            "dev.contractor.user",
+            "dev.viewer",
+        ]))
+        .order_by(User.username)
+    ).all()
+    return [serialize_user(user) for user in users]
+
+
 @router.get("/dashboard", response_model=AdminDashboardResponse, summary="Get admin dashboard")
-def get_admin_dashboard(db: Session = Depends(get_db)) -> AdminDashboardResponse:
+def get_admin_dashboard(db: Session = Depends(get_db), _: User = Depends(require_permission("admin.dashboard.view"))) -> AdminDashboardResponse:
     return AdminDashboardResponse(**dashboard_counts(db))
 
 
 @router.get("/system-status", response_model=AdminSystemStatusResponse, summary="Get admin system status")
-def get_admin_system_status(db: Session = Depends(get_db)) -> AdminSystemStatusResponse:
+def get_admin_system_status(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("admin.system_status.view")),
+) -> AdminSystemStatusResponse:
     database_status = "operational"
     try:
         db.execute(select(1))
@@ -150,6 +187,7 @@ def get_admin_system_status(db: Session = Depends(get_db)) -> AdminSystemStatusR
 @router.get("/contractors", response_model=list[ContractorAdminResponse], summary="List admin contractors")
 def admin_list_contractors(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("admin.contractors.view")),
     search: str | None = None,
     is_active: bool | None = None,
     skip: int = Query(default=0, ge=0),
@@ -159,33 +197,34 @@ def admin_list_contractors(
 
 
 @router.post("/contractors", response_model=ContractorAdminResponse, status_code=status.HTTP_201_CREATED, summary="Create admin contractor")
-def admin_create_contractor(payload: ContractorAdminCreate, db: Session = Depends(get_db)) -> ContractorAdminResponse:
+def admin_create_contractor(payload: ContractorAdminCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.contractors.manage"))) -> ContractorAdminResponse:
     return serialize_contractor(create_contractor(db, payload), db)
 
 
 @router.get("/contractors/{item_id}", response_model=ContractorAdminResponse, summary="Get admin contractor")
-def admin_get_contractor(item_id: UUID, db: Session = Depends(get_db)) -> ContractorAdminResponse:
+def admin_get_contractor(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.contractors.view"))) -> ContractorAdminResponse:
     return serialize_contractor(get_or_404(db, Contractor, item_id), db)
 
 
 @router.patch("/contractors/{item_id}", response_model=ContractorAdminResponse, summary="Update admin contractor")
-def admin_update_contractor(item_id: UUID, payload: ContractorAdminUpdate, db: Session = Depends(get_db)) -> ContractorAdminResponse:
+def admin_update_contractor(item_id: UUID, payload: ContractorAdminUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.contractors.manage"))) -> ContractorAdminResponse:
     return serialize_contractor(update_contractor(db, item_id, payload), db)
 
 
 @router.post("/contractors/{item_id}/deactivate", response_model=ContractorAdminResponse, summary="Deactivate contractor")
-def admin_deactivate_contractor(item_id: UUID, db: Session = Depends(get_db)) -> ContractorAdminResponse:
+def admin_deactivate_contractor(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.contractors.manage"))) -> ContractorAdminResponse:
     return serialize_contractor(set_contractor_active(db, item_id, False), db)
 
 
 @router.post("/contractors/{item_id}/activate", response_model=ContractorAdminResponse, summary="Activate contractor")
-def admin_activate_contractor(item_id: UUID, db: Session = Depends(get_db)) -> ContractorAdminResponse:
+def admin_activate_contractor(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.contractors.manage"))) -> ContractorAdminResponse:
     return serialize_contractor(set_contractor_active(db, item_id, True), db)
 
 
 @router.get("/users", response_model=list[UserResponse], summary="List admin users")
 def admin_list_users(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("admin.users.view")),
     search: str | None = None,
     user_type: UserType | None = None,
     role_id: UUID | None = None,
@@ -199,44 +238,45 @@ def admin_list_users(
 
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Create admin user")
-def admin_create_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserResponse:
+def admin_create_user(payload: UserCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.users.manage"))) -> UserResponse:
     ensure_seed_roles(db)
     return serialize_user(create_user(db, payload))
 
 
 @router.get("/users/{item_id}", response_model=UserResponse, summary="Get admin user")
-def admin_get_user(item_id: UUID, db: Session = Depends(get_db)) -> UserResponse:
+def admin_get_user(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.users.view"))) -> UserResponse:
     return serialize_user(get_or_404(db, User, item_id))
 
 
 @router.patch("/users/{item_id}", response_model=UserResponse, summary="Update admin user")
-def admin_update_user(item_id: UUID, payload: UserUpdate, db: Session = Depends(get_db)) -> UserResponse:
+def admin_update_user(item_id: UUID, payload: UserUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.users.manage"))) -> UserResponse:
     return serialize_user(update_user(db, item_id, payload))
 
 
 @router.post("/users/{item_id}/deactivate", response_model=UserResponse, summary="Deactivate admin user")
-def admin_deactivate_user(item_id: UUID, db: Session = Depends(get_db)) -> UserResponse:
+def admin_deactivate_user(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.users.manage"))) -> UserResponse:
     return serialize_user(set_user_active(db, item_id, False))
 
 
 @router.post("/users/{item_id}/activate", response_model=UserResponse, summary="Activate admin user")
-def admin_activate_user(item_id: UUID, db: Session = Depends(get_db)) -> UserResponse:
+def admin_activate_user(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.users.manage"))) -> UserResponse:
     return serialize_user(set_user_active(db, item_id, True))
 
 
 @router.put("/users/{item_id}/roles", response_model=UserResponse, summary="Set user roles")
-def admin_set_user_roles(item_id: UUID, payload: UserRolesUpdate, db: Session = Depends(get_db)) -> UserResponse:
+def admin_set_user_roles(item_id: UUID, payload: UserRolesUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.users.manage"))) -> UserResponse:
     return serialize_user(set_user_roles(db, item_id, payload))
 
 
 @router.put("/users/{item_id}/contractors", response_model=UserResponse, summary="Set user contractor memberships")
-def admin_set_user_contractors(item_id: UUID, payload: UserContractorsUpdate, db: Session = Depends(get_db)) -> UserResponse:
+def admin_set_user_contractors(item_id: UUID, payload: UserContractorsUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.users.manage"))) -> UserResponse:
     return serialize_user(set_user_contractors(db, item_id, payload))
 
 
 @router.get("/roles", response_model=list[RoleResponse], summary="List roles")
 def admin_list_roles(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("admin.roles.view")),
     search: str | None = None,
     is_active: bool | None = None,
     skip: int = Query(default=0, ge=0),
@@ -246,23 +286,44 @@ def admin_list_roles(
 
 
 @router.post("/roles", response_model=RoleResponse, status_code=status.HTTP_201_CREATED, summary="Create role")
-def admin_create_role(payload: RoleCreate, db: Session = Depends(get_db)) -> RoleResponse:
+def admin_create_role(payload: RoleCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.roles.manage"))) -> RoleResponse:
     return serialize_role(create_role(db, payload))
 
 
 @router.patch("/roles/{item_id}", response_model=RoleResponse, summary="Update role")
-def admin_update_role(item_id: UUID, payload: RoleUpdate, db: Session = Depends(get_db)) -> RoleResponse:
+def admin_update_role(item_id: UUID, payload: RoleUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.roles.manage"))) -> RoleResponse:
     return serialize_role(update_role(db, item_id, payload))
 
 
 @router.post("/roles/{item_id}/deactivate", response_model=RoleResponse, summary="Deactivate role")
-def admin_deactivate_role(item_id: UUID, db: Session = Depends(get_db)) -> RoleResponse:
+def admin_deactivate_role(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.roles.manage"))) -> RoleResponse:
     return serialize_role(deactivate_role(db, item_id))
+
+
+@router.get("/permissions", response_model=list[PermissionResponse], summary="List permissions")
+def admin_list_permissions(db: Session = Depends(get_db), _: User = Depends(require_permission("admin.roles.view"))) -> list[PermissionResponse]:
+    return [serialize_permission(permission) for permission in list_permissions(db)]
+
+
+@router.get("/roles/{role_id}/permissions", response_model=list[PermissionResponse], summary="Get role permissions")
+def admin_get_role_permissions(role_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.roles.view"))) -> list[PermissionResponse]:
+    return [serialize_permission(permission) for permission in get_role_permissions(db, role_id)]
+
+
+@router.put("/roles/{role_id}/permissions", response_model=list[PermissionResponse], summary="Set role permissions")
+def admin_set_role_permissions(
+    role_id: UUID,
+    payload: RolePermissionsUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("admin.roles.manage")),
+) -> list[PermissionResponse]:
+    return [serialize_permission(permission) for permission in set_role_permissions(db, role_id, payload.permission_ids, actor_id=user.id)]
 
 
 @router.get("/audit", response_model=list[AdminAuditLogResponse], summary="List admin audit")
 def admin_list_audit(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("admin.audit.view")),
     actor_id: UUID | None = None,
     action: str | None = None,
     entity_type: str | None = None,
@@ -333,22 +394,22 @@ def apply_admin_filters(query: Select[tuple[Any]], model: type[Any], search: str
 
 
 @router.get("/cities", response_model=list[CityResponse])
-def admin_list_cities(db: Session = Depends(get_db), search: str | None = None, is_active: bool | None = None, skip: int = 0, limit: int = 100) -> list[City]:
+def admin_list_cities(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = None, is_active: bool | None = None, skip: int = 0, limit: int = 100) -> list[City]:
     return list(db.scalars(apply_admin_filters(select(City), City, search, is_active).order_by(City.name).offset(skip).limit(limit)).all())
 
 
 @router.post("/cities", response_model=CityResponse, status_code=status.HTTP_201_CREATED)
-def admin_create_city(payload: CityCreate, db: Session = Depends(get_db)) -> City:
+def admin_create_city(payload: CityCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> City:
     return admin_create_reference(db, City, payload, "CITY_CREATED", "City")
 
 
 @router.patch("/cities/{item_id}", response_model=CityResponse)
-def admin_update_city(item_id: UUID, payload: CityUpdate, db: Session = Depends(get_db)) -> City:
+def admin_update_city(item_id: UUID, payload: CityUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> City:
     return admin_update_reference(db, City, item_id, payload, "CITY_UPDATED", "City")
 
 
 @router.get("/facilities", response_model=list[FacilityResponse])
-def admin_list_facilities(db: Session = Depends(get_db), search: str | None = None, is_active: bool | None = None, city_id: UUID | None = None, skip: int = 0, limit: int = 100) -> list[Facility]:
+def admin_list_facilities(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = None, is_active: bool | None = None, city_id: UUID | None = None, skip: int = 0, limit: int = 100) -> list[Facility]:
     query = apply_admin_filters(select(Facility), Facility, search, is_active)
     if city_id is not None:
         query = query.where(Facility.city_id == city_id)
@@ -356,17 +417,17 @@ def admin_list_facilities(db: Session = Depends(get_db), search: str | None = No
 
 
 @router.post("/facilities", response_model=FacilityResponse, status_code=status.HTTP_201_CREATED)
-def admin_create_facility(payload: FacilityCreate, db: Session = Depends(get_db)) -> Facility:
+def admin_create_facility(payload: FacilityCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Facility:
     return admin_create_reference(db, Facility, payload, "FACILITY_CREATED", "Facility")
 
 
 @router.patch("/facilities/{item_id}", response_model=FacilityResponse)
-def admin_update_facility(item_id: UUID, payload: FacilityUpdate, db: Session = Depends(get_db)) -> Facility:
+def admin_update_facility(item_id: UUID, payload: FacilityUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Facility:
     return admin_update_reference(db, Facility, item_id, payload, "FACILITY_UPDATED", "Facility")
 
 
 @router.get("/premises", response_model=list[PremiseResponse])
-def admin_list_premises(db: Session = Depends(get_db), search: str | None = None, is_active: bool | None = None, facility_id: UUID | None = None, skip: int = 0, limit: int = 100) -> list[Premise]:
+def admin_list_premises(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = None, is_active: bool | None = None, facility_id: UUID | None = None, skip: int = 0, limit: int = 100) -> list[Premise]:
     query = select(Premise)
     if search:
         query = query.where(Premise.name.ilike(f"%{search}%"))
@@ -378,33 +439,34 @@ def admin_list_premises(db: Session = Depends(get_db), search: str | None = None
 
 
 @router.post("/premises", response_model=PremiseResponse, status_code=status.HTTP_201_CREATED)
-def admin_create_premise(payload: PremiseCreate, db: Session = Depends(get_db)) -> Premise:
+def admin_create_premise(payload: PremiseCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Premise:
     return admin_create_reference(db, Premise, payload, "PREMISE_CREATED", "Premise")
 
 
 @router.patch("/premises/{item_id}", response_model=PremiseResponse)
-def admin_update_premise(item_id: UUID, payload: PremiseUpdate, db: Session = Depends(get_db)) -> Premise:
+def admin_update_premise(item_id: UUID, payload: PremiseUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> Premise:
     return admin_update_reference(db, Premise, item_id, payload, "PREMISE_UPDATED", "Premise")
 
 
 @router.get("/work-types", response_model=list[WorkTypeResponse])
-def admin_list_work_types(db: Session = Depends(get_db), search: str | None = None, is_active: bool | None = None, skip: int = 0, limit: int = 100) -> list[WorkType]:
+def admin_list_work_types(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = None, is_active: bool | None = None, skip: int = 0, limit: int = 100) -> list[WorkType]:
     return list(db.scalars(apply_admin_filters(select(WorkType), WorkType, search, is_active).order_by(WorkType.name).offset(skip).limit(limit)).all())
 
 
 @router.post("/work-types", response_model=WorkTypeResponse, status_code=status.HTTP_201_CREATED)
-def admin_create_work_type(payload: WorkTypeCreate, db: Session = Depends(get_db)) -> WorkType:
+def admin_create_work_type(payload: WorkTypeCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> WorkType:
     return admin_create_reference(db, WorkType, payload, "WORK_TYPE_UPDATED", "WorkType")
 
 
 @router.patch("/work-types/{item_id}", response_model=WorkTypeResponse)
-def admin_update_work_type(item_id: UUID, payload: WorkTypeUpdate, db: Session = Depends(get_db)) -> WorkType:
+def admin_update_work_type(item_id: UUID, payload: WorkTypeUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> WorkType:
     return admin_update_reference(db, WorkType, item_id, payload, "WORK_TYPE_UPDATED", "WorkType")
 
 
 @router.get("/responsibilities", response_model=list[ContractorResponsibilityResponse])
 def admin_list_responsibilities(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("reference_data.manage")),
     contractor_id: UUID | None = None,
     city_id: UUID | None = None,
     facility_id: UUID | None = None,
@@ -428,10 +490,10 @@ def admin_list_responsibilities(
 
 
 @router.post("/responsibilities", response_model=ContractorResponsibilityResponse, status_code=status.HTTP_201_CREATED)
-def admin_create_responsibility(payload: ContractorResponsibilityCreate, db: Session = Depends(get_db)) -> ContractorResponsibility:
+def admin_create_responsibility(payload: ContractorResponsibilityCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> ContractorResponsibility:
     return admin_create_reference(db, ContractorResponsibility, payload, "RESPONSIBILITY_CREATED", "ContractorResponsibility")
 
 
 @router.patch("/responsibilities/{item_id}", response_model=ContractorResponsibilityResponse)
-def admin_update_responsibility(item_id: UUID, payload: ContractorResponsibilityUpdate, db: Session = Depends(get_db)) -> ContractorResponsibility:
+def admin_update_responsibility(item_id: UUID, payload: ContractorResponsibilityUpdate, db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage"))) -> ContractorResponsibility:
     return admin_update_reference(db, ContractorResponsibility, item_id, payload, "RESPONSIBILITY_UPDATED", "ContractorResponsibility")

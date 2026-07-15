@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     )
     storage_root: str = Field(default="storage", alias="STORAGE_ROOT")
     require_work_result_for_completion: bool = Field(default=True, alias="REQUIRE_WORK_RESULT_FOR_COMPLETION")
+    allow_dev_auth_headers: bool = Field(default=True, alias="ALLOW_DEV_AUTH_HEADERS")
 
     @field_validator("backend_cors_origins", mode="before")
     @classmethod

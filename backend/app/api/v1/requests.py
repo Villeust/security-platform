@@ -7,8 +7,9 @@ from fastapi.responses import FileResponse
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import get_current_internal_actor_id
+from app.api.deps import get_current_internal_actor_id_from_user, get_current_permissions, require_permission
 from app.db.session import get_db
+from app.models.admin import User
 from app.models.requests import ContractorRequest, RequestAssignment, RequestAttachmentCategory, RequestHistory, RequestHistoryActorType, RequestStatus, RequestVisibility, RequestWorkType
 from app.schemas.collaboration import RequestAttachmentResponse, RequestCommentCreate, RequestCommentResponse, RequestCommentUpdate
 from app.schemas.requests import (
@@ -118,7 +119,7 @@ def get_request_or_404(db: Session, request_id: UUID) -> ContractorRequest:
     status_code=status.HTTP_201_CREATED,
     summary="Create contractor request",
 )
-def create_request(payload: ContractorRequestCreate, db: Session = Depends(get_db)) -> ContractorRequestResponse:
+def create_request(payload: ContractorRequestCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.create"))) -> ContractorRequestResponse:
     request, unassigned = create_contractor_request(db, payload)
     return serialize_request(get_request_or_404(db, request.id), unassigned)
 
@@ -172,6 +173,7 @@ def apply_request_filters(
 @router.get("", response_model=list[ContractorRequestResponse], summary="List contractor requests")
 def list_requests(
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("requests.view")),
     search: str | None = None,
     status_filter: RequestStatus | None = Query(default=None, alias="status"),
     priority: str | None = None,
@@ -221,7 +223,7 @@ def list_requests(
 
 
 @router.get("/{request_id}", response_model=ContractorRequestResponse, summary="Get contractor request by id")
-def get_request(request_id: UUID, db: Session = Depends(get_db)) -> ContractorRequestResponse:
+def get_request(request_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.view"))) -> ContractorRequestResponse:
     return serialize_request(get_request_or_404(db, request_id))
 
 
@@ -230,6 +232,7 @@ def update_request(
     request_id: UUID,
     payload: ContractorRequestUpdate,
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("requests.update")),
 ) -> ContractorRequestResponse:
     request = get_request_or_404(db, request_id)
     request, unassigned = update_contractor_request(db, request, payload)
@@ -237,7 +240,7 @@ def update_request(
 
 
 @router.post("/{request_id}/publish", response_model=ContractorRequestResponse, summary="Publish contractor request")
-def publish_request(request_id: UUID, db: Session = Depends(get_db)) -> ContractorRequestResponse:
+def publish_request(request_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.publish"))) -> ContractorRequestResponse:
     request = get_request_or_404(db, request_id)
     request, unassigned = publish_contractor_request(db, request)
     return serialize_request(get_request_or_404(db, request.id), unassigned)
@@ -248,21 +251,25 @@ def update_request_status(
     request_id: UUID,
     payload: RequestStatusUpdate,
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("requests.change_status")),
+    permissions: set[str] = Depends(get_current_permissions),
 ) -> ContractorRequestResponse:
+    if payload.status == RequestStatus.CLOSED and "requests.close" not in permissions:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
     request = get_request_or_404(db, request_id)
     change_request_status(db, request, payload.status, comment=payload.comment)
     return serialize_request(get_request_or_404(db, request_id))
 
 
 @router.get("/{request_id}/history", response_model=list[RequestHistoryItem], summary="Get contractor request history")
-def get_request_history(request_id: UUID, db: Session = Depends(get_db)) -> list[RequestHistoryItem]:
+def get_request_history(request_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.view"))) -> list[RequestHistoryItem]:
     get_request_or_404(db, request_id)
     history = db.scalars(select(RequestHistory).where(RequestHistory.request_id == request_id).order_by(RequestHistory.created_at.asc())).all()
     return [serialize_history(item) for item in history]
 
 
 @router.get("/{request_id}/comments", response_model=list[RequestCommentResponse], summary="List request comments")
-def list_request_comments(request_id: UUID, db: Session = Depends(get_db)) -> list[RequestCommentResponse]:
+def list_request_comments(request_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.comments.internal"))) -> list[RequestCommentResponse]:
     request = get_request_or_404(db, request_id)
     return [serialize_comment(comment) for comment in list_internal_comments(db, request)]
 
@@ -272,7 +279,8 @@ def create_request_comment(
     request_id: UUID,
     payload: RequestCommentCreate,
     db: Session = Depends(get_db),
-    actor_id: UUID | None = Depends(get_current_internal_actor_id),
+    actor_id: UUID | None = Depends(get_current_internal_actor_id_from_user),
+    _: User = Depends(require_permission("requests.comments.internal")),
 ) -> RequestCommentResponse:
     request = get_request_or_404(db, request_id)
     return serialize_comment(create_internal_comment(db, request, payload, actor_id))
@@ -284,7 +292,8 @@ def update_request_comment(
     comment_id: UUID,
     payload: RequestCommentUpdate,
     db: Session = Depends(get_db),
-    actor_id: UUID | None = Depends(get_current_internal_actor_id),
+    actor_id: UUID | None = Depends(get_current_internal_actor_id_from_user),
+    _: User = Depends(require_permission("requests.comments.internal")),
 ) -> RequestCommentResponse:
     request = get_request_or_404(db, request_id)
     comment = get_comment_or_404(db, request_id, comment_id)
@@ -296,7 +305,8 @@ def delete_request_comment(
     request_id: UUID,
     comment_id: UUID,
     db: Session = Depends(get_db),
-    actor_id: UUID | None = Depends(get_current_internal_actor_id),
+    actor_id: UUID | None = Depends(get_current_internal_actor_id_from_user),
+    _: User = Depends(require_permission("requests.comments.internal")),
 ) -> RequestCommentResponse:
     request = get_request_or_404(db, request_id)
     comment = get_comment_or_404(db, request_id, comment_id)
@@ -304,7 +314,7 @@ def delete_request_comment(
 
 
 @router.get("/{request_id}/attachments", response_model=list[RequestAttachmentResponse], summary="List request attachments")
-def list_request_attachments(request_id: UUID, db: Session = Depends(get_db)) -> list[RequestAttachmentResponse]:
+def list_request_attachments(request_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.attachments.internal"))) -> list[RequestAttachmentResponse]:
     request = get_request_or_404(db, request_id)
     return [serialize_attachment(attachment) for attachment in list_internal_attachments(db, request)]
 
@@ -318,7 +328,8 @@ async def upload_request_attachment(
     assignment_id: UUID | None = Form(default=None),
     comment_id: UUID | None = Form(default=None),
     db: Session = Depends(get_db),
-    actor_id: UUID | None = Depends(get_current_internal_actor_id),
+    actor_id: UUID | None = Depends(get_current_internal_actor_id_from_user),
+    _: User = Depends(require_permission("requests.attachments.internal")),
 ) -> RequestAttachmentResponse:
     request = get_request_or_404(db, request_id)
     attachment = await create_attachment(
@@ -337,7 +348,7 @@ async def upload_request_attachment(
 
 
 @router.get("/{request_id}/attachments/{attachment_id}/download", summary="Download request attachment")
-def download_request_attachment(request_id: UUID, attachment_id: UUID, db: Session = Depends(get_db)) -> FileResponse:
+def download_request_attachment(request_id: UUID, attachment_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.attachments.internal"))) -> FileResponse:
     get_request_or_404(db, request_id)
     attachment = get_attachment_or_404(db, request_id, attachment_id)
     return FileResponse(attachment_file_path(attachment), media_type=attachment.mime_type, filename=attachment.original_filename)
@@ -348,7 +359,8 @@ def delete_request_attachment(
     request_id: UUID,
     attachment_id: UUID,
     db: Session = Depends(get_db),
-    actor_id: UUID | None = Depends(get_current_internal_actor_id),
+    actor_id: UUID | None = Depends(get_current_internal_actor_id_from_user),
+    _: User = Depends(require_permission("requests.attachments.internal")),
 ) -> RequestAttachmentResponse:
     request = get_request_or_404(db, request_id)
     attachment = get_attachment_or_404(db, request_id, attachment_id)

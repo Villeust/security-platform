@@ -35,7 +35,7 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
+    with TestClient(app, headers={"X-User-Role": "PLATFORM_ADMIN"}) as test_client:
         yield test_client
     app.dependency_overrides.clear()
 
@@ -181,7 +181,7 @@ def test_dashboard_counts(client: TestClient) -> None:
     response = client.get("/api/v1/admin/dashboard")
     assert response.status_code == 200
     assert response.json()["contractors_total"] == 1
-    assert response.json()["users_total"] == 1
+    assert response.json()["users_total"] == 2
 
 
 def test_system_status(client: TestClient) -> None:
