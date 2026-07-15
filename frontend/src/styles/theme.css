@@ -68,6 +68,61 @@ body {
   padding: 24px;
 }
 
+.sp-dev-tools-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 300px;
+}
+
+.sp-dev-tools-select {
+  width: 100%;
+}
+
+.sp-profile-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 4px 8px;
+  border: 1px solid #edf0f3;
+  border-radius: 8px;
+  color: #20242a;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.sp-profile-button:hover {
+  border-color: #c9d8f2;
+  background: #f7f8fa;
+}
+
+.sp-profile-avatar {
+  flex: 0 0 auto;
+  background: #1677ff;
+}
+
+.sp-profile-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 130px;
+  line-height: 1.2;
+}
+
+.sp-profile-role {
+  max-width: 180px;
+  overflow: hidden;
+  color: #667085;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sp-profile-divider {
+  margin-inline: 2px;
+}
+
 .sp-footer {
   padding: 16px 24px;
   color: #667085;
@@ -172,6 +227,90 @@ body {
   gap: 12px;
 }
 
+.cr-collaboration-stack {
+  width: 100%;
+}
+
+.cr-collaboration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cr-comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #667085;
+}
+
+.cr-comment-body {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.admin-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.admin-nav {
+  position: sticky;
+  top: 88px;
+  overflow: hidden;
+  border: 1px solid #edf0f3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.admin-content {
+  min-width: 0;
+}
+
+.admin-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.admin-metric {
+  margin: 0 0 8px;
+  color: #20242a;
+  font-size: 32px;
+  line-height: 1.1;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.admin-full-width {
+  width: 100%;
+}
+
+.admin-json {
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #edf0f3;
+  border-radius: 8px;
+  background: #f7f8fa;
+  font-size: 12px;
+}
+
+.admin-permission-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
 .sp-search-bar {
   width: min(320px, 100%);
 }
@@ -201,7 +340,14 @@ body {
   .sp-dashboard-grid,
   .sp-settings-grid,
   .sp-app-grid,
+  .admin-layout,
+  .admin-card-grid,
+  .admin-form-grid,
   .cr-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .admin-nav {
+    position: static;
   }
 }

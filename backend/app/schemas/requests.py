@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.requests import AssignmentStatus, RequestStatus
+from app.models.requests import AssignmentStatus, RequestHistoryActorType, RequestHistoryEventType, RequestStatus
 
 
 class AssignmentResponse(BaseModel):
@@ -32,15 +32,18 @@ class ContractorAssignmentResponse(BaseModel):
 
 
 class ContractorRequestBase(BaseModel):
-    city_id: UUID = Field(description="City where the work is requested.")
-    facility_id: UUID = Field(description="Facility where the work is requested.")
+    city_id: UUID | None = Field(default=None, description="City where the work is requested.")
+    facility_id: UUID | None = Field(default=None, description="Facility where the work is requested.")
     premise_id: UUID | None = Field(default=None, description="Premise, required for work types that require it.")
     title: str = Field(min_length=1, max_length=255)
     description: str | None = None
     contact_name: str | None = Field(default=None, max_length=255)
     contact_email: str | None = Field(default=None, max_length=255)
     contact_phone: str | None = Field(default=None, max_length=64)
-    work_type_ids: list[UUID] = Field(min_length=1, description="One or more unique work type identifiers.")
+    priority: str | None = Field(default=None, max_length=32)
+    desired_completion_date: datetime | None = None
+    work_type_ids: list[UUID] = Field(default_factory=list, description="One or more unique work type identifiers.")
+    save_as_draft: bool = False
 
     @field_validator("work_type_ids")
     @classmethod
@@ -63,6 +66,8 @@ class ContractorRequestUpdate(BaseModel):
     contact_name: str | None = Field(default=None, max_length=255)
     contact_email: str | None = Field(default=None, max_length=255)
     contact_phone: str | None = Field(default=None, max_length=64)
+    priority: str | None = Field(default=None, max_length=32)
+    desired_completion_date: datetime | None = None
     work_type_ids: list[UUID] | None = Field(default=None, min_length=1)
 
     @field_validator("work_type_ids")
@@ -78,14 +83,18 @@ class ContractorRequestResponse(BaseModel):
 
     id: UUID
     request_number: str | None
-    city_id: UUID
-    facility_id: UUID
+    city_id: UUID | None
+    facility_id: UUID | None
     premise_id: UUID | None
     title: str
     description: str | None
     contact_name: str | None
     contact_email: str | None
     contact_phone: str | None
+    priority: str | None
+    desired_completion_date: datetime | None
+    completed_at: datetime | None
+    closed_at: datetime | None
     status: RequestStatus
     work_type_ids: list[UUID]
     assignments: list[AssignmentResponse]
@@ -97,10 +106,18 @@ class ContractorRequestResponse(BaseModel):
 class ContractorRequestListResponse(BaseModel):
     id: UUID
     request_number: str | None
-    city_id: UUID
-    facility_id: UUID
+    city_id: UUID | None
+    facility_id: UUID | None
     premise_id: UUID | None
     title: str
+    description: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
+    priority: str | None = None
+    desired_completion_date: datetime | None = None
+    completed_at: datetime | None = None
+    closed_at: datetime | None = None
     status: RequestStatus
     work_type_ids: list[UUID]
     assignments: list[ContractorAssignmentResponse]
@@ -110,8 +127,21 @@ class ContractorRequestListResponse(BaseModel):
 
 class AssignmentStatusUpdate(BaseModel):
     status: AssignmentStatus = Field(description="New status for the contractor assignment.")
+    comment: str | None = None
 
 
 class RequestHistoryItem(BaseModel):
-    event: str
+    id: UUID
+    event_type: RequestHistoryEventType
+    old_status: RequestStatus | None
+    new_status: RequestStatus | None
+    changed_fields: dict | None = None
+    comment: str | None
     created_at: datetime
+    actor_type: RequestHistoryActorType
+    actor_id: UUID | None = None
+
+
+class RequestStatusUpdate(BaseModel):
+    status: RequestStatus
+    comment: str | None = None

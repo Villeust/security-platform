@@ -5,10 +5,20 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Button, Card, ErrorState, Loader, PageHeader, Section } from '../../components/design-system';
-import { createRequest } from './services/requestService';
 import { useReferenceData } from './hooks/useReferenceData';
+import { createRequest } from './services/requestService';
 import type { RequestFormValues, Uuid } from './types/api';
 import { getWorkTypeLabel } from './utils';
+
+function normalizeDate(value: unknown): string | null {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === 'object' && value !== null && 'toISOString' in value && typeof value.toISOString === 'function') {
+    return value.toISOString();
+  }
+  return String(value);
+}
 
 export function ContractorRequestCreatePage() {
   const [form] = Form.useForm<RequestFormValues>();
@@ -28,7 +38,6 @@ export function ContractorRequestCreatePage() {
     [referenceData.premises, selectedFacilityId],
   );
   const premiseRequired = selectedWorkTypeIds.some((id: Uuid) => referenceData.workTypes.find((workType) => workType.id === id)?.requires_premise);
-
   const selectedPremise = referenceData.premises.find((premise) => premise.id === selectedPremiseId);
 
   function fillContactsFromPremise(premiseId: Uuid) {
@@ -44,20 +53,23 @@ export function ContractorRequestCreatePage() {
     });
   }
 
-  async function submit(values: RequestFormValues) {
+  async function submit(values: RequestFormValues, saveAsDraft = false) {
     try {
       const created = await createRequest({
-        city_id: values.city_id,
-        facility_id: values.facility_id,
+        city_id: values.city_id ?? null,
+        facility_id: values.facility_id ?? null,
         premise_id: values.premise_id ?? null,
         title: values.title,
         description: values.description ?? null,
         contact_name: values.contact_name ?? null,
         contact_email: values.contact_email ?? null,
         contact_phone: values.contact_phone ?? null,
-        work_type_ids: values.work_type_ids,
+        priority: values.priority ?? null,
+        desired_completion_date: normalizeDate(values.desired_completion_date),
+        work_type_ids: values.work_type_ids ?? [],
+        save_as_draft: saveAsDraft,
       });
-      message.success('Заявка создана и отправлена.');
+      message.success(saveAsDraft ? 'Черновик сохранен.' : 'Заявка создана и отправлена.');
       navigate(`/applications/contractor-requests/${created.id}`);
     } catch (error: unknown) {
       console.error('Failed to create contractor request', error);
@@ -69,10 +81,9 @@ export function ContractorRequestCreatePage() {
     }
   }
 
-  function saveDraft() {
-    const values = form.getFieldsValue();
-    localStorage.setItem('contractor-request-draft', JSON.stringify(values));
-    message.success('Черновик сохранён локально. Backend DRAFT API пока отсутствует.');
+  async function saveDraft() {
+    const requiredDraftValues = await form.validateFields(['title', 'description']);
+    await submit({ ...form.getFieldsValue(), ...requiredDraftValues } as RequestFormValues, true);
   }
 
   if (referenceData.isLoading) {
@@ -85,14 +96,14 @@ export function ContractorRequestCreatePage() {
 
   return (
     <div className="sp-page">
-      <PageHeader title="Новая заявка подрядчику" description="Форма использует текущую backend-схему создания заявки." />
+      <PageHeader title="Новая заявка подрядчику" description="Создайте черновик или сразу отправьте заявку в workflow." />
       <Section>
         <Card>
-          <Form<RequestFormValues> form={form} layout="vertical" onFinish={submit} className="cr-form">
+          <Form<RequestFormValues> form={form} layout="vertical" onFinish={(values) => submit(values, false)} className="cr-form">
             <Form.Item name="title" label="Заголовок" rules={[{ required: true, message: 'Введите заголовок' }]}>
               <Input />
             </Form.Item>
-            <Form.Item name="description" label="Описание">
+            <Form.Item name="description" label="Описание" rules={[{ required: true, message: 'Введите описание' }]}>
               <Input.TextArea rows={4} />
             </Form.Item>
             <div className="cr-form-grid">
@@ -110,7 +121,7 @@ export function ContractorRequestCreatePage() {
               </Form.Item>
             </div>
             <div className="cr-form-grid">
-              <Form.Item name="premise_id" label="Помещение" rules={[{ required: premiseRequired, message: 'Помещение обязательно для СКУД' }]}>
+              <Form.Item name="premise_id" label="Помещение" rules={[{ required: premiseRequired, message: 'Помещение обязательно для выбранного направления' }]}>
                 <Select
                   allowClear
                   options={filteredPremises.map((premise) => ({ label: premise.name, value: premise.id }))}
@@ -140,10 +151,8 @@ export function ContractorRequestCreatePage() {
               <Form.Item name="contact_phone" label="Телефон">
                 <Input placeholder={selectedPremise?.owner_phone ?? undefined} />
               </Form.Item>
-              <Form.Item name="priority" label="Приоритет">
+              <Form.Item name="priority" label="Приоритет" initialValue="normal">
                 <Select
-                  disabled
-                  placeholder="Не поддерживается backend API"
                   options={[
                     { label: 'Низкий', value: 'low' },
                     { label: 'Обычный', value: 'normal' },
@@ -153,7 +162,7 @@ export function ContractorRequestCreatePage() {
               </Form.Item>
             </div>
             <Form.Item name="desired_completion_date" label="Желаемый срок">
-              <DatePicker disabled className="cr-date-picker" placeholder="Не поддерживается backend API" />
+              <DatePicker className="cr-date-picker" />
             </Form.Item>
             <div className="cr-form-actions">
               <Button icon={<SaveOutlined />} onClick={saveDraft}>

@@ -1,45 +1,43 @@
-import { AppstoreOutlined, PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Select, Space, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { Button, Card, EmptyState, ErrorState, Loader, PageHeader, SearchBar, Section, Table } from '../../components/design-system';
+import { useAuth } from '../../context/AuthContext';
 import { RequestStatusBadge } from './components/RequestStatusBadge';
 import { useReferenceData } from './hooks/useReferenceData';
 import { useRequests } from './hooks/useRequests';
-import type { ContractorRequest, RequestStatus, Uuid } from './types/api';
+import type { ContractorRequest, RequestListParams, RequestStatus, Uuid } from './types/api';
 import { contractorName, facilityName, formatDate, getWorkTypeLabel, labelsByIds } from './utils';
 
 type Filters = {
+  search?: string;
   status?: RequestStatus;
   priority?: string;
-  cityId?: Uuid;
-  facilityId?: Uuid;
-  workTypeId?: Uuid;
+  city_id?: Uuid;
+  facility_id?: Uuid;
+  work_type_id?: Uuid;
 };
+
+const requestStatuses: RequestStatus[] = ['DRAFT', 'NEW', 'PARTIALLY_ASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CLOSED', 'CANCELLED'];
 
 export function ContractorRequestsListPage() {
   const navigate = useNavigate();
-  const { requests, isLoading, error } = useRequests();
+  const auth = useAuth();
   const referenceData = useReferenceData();
-  const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<Filters>({});
-
-  const filteredRequests = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase('ru-RU');
-    return requests
-      .filter((request) => {
-        const text = [request.request_number, request.title, request.description].filter(Boolean).join(' ').toLocaleLowerCase('ru-RU');
-        const matchesSearch = !query || text.includes(query);
-        const matchesStatus = !filters.status || request.status === filters.status;
-        const matchesCity = !filters.cityId || request.city_id === filters.cityId;
-        const matchesFacility = !filters.facilityId || request.facility_id === filters.facilityId;
-        const matchesWorkType = !filters.workTypeId || request.work_type_ids.includes(filters.workTypeId);
-        return matchesSearch && matchesStatus && matchesCity && matchesFacility && matchesWorkType;
-      })
-      .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
-  }, [filters, requests, search]);
+  const requestParams: RequestListParams = useMemo(
+    () => ({
+      ...filters,
+      limit: 100,
+      sort_by: 'created_at',
+      sort_order: 'desc',
+    }),
+    [filters],
+  );
+  const { requests, isLoading, error, reload } = useRequests(requestParams);
 
   const columns: ColumnsType<ContractorRequest> = [
     {
@@ -52,7 +50,7 @@ export function ContractorRequestsListPage() {
     {
       title: 'Объект',
       key: 'facility',
-      render: (_value, record) => facilityName(record.facility_id, referenceData.facilities),
+      render: (_value, record) => (record.facility_id ? facilityName(record.facility_id, referenceData.facilities) : '—'),
     },
     {
       title: 'Направления',
@@ -76,17 +74,10 @@ export function ContractorRequestsListPage() {
         </Space>
       ),
     },
-    { title: 'Приоритет', key: 'priority', render: () => '—' },
+    { title: 'Приоритет', dataIndex: 'priority', key: 'priority', render: (value: string | null) => value ?? '—' },
     { title: 'Статус', dataIndex: 'status', key: 'status', render: (status: RequestStatus) => <RequestStatusBadge status={status} /> },
-    { title: 'Желаемый срок', key: 'desired_completion_date', render: () => '—' },
-    {
-      title: 'Дата создания',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      sorter: (left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime(),
-      defaultSortOrder: 'descend',
-      render: (value: string) => formatDate(value),
-    },
+    { title: 'Желаемый срок', dataIndex: 'desired_completion_date', key: 'desired_completion_date', render: (value: string | null) => formatDate(value) },
+    { title: 'Создано', dataIndex: 'created_at', key: 'created_at', render: (value: string) => formatDate(value) },
   ];
 
   if (isLoading || referenceData.isLoading) {
@@ -101,58 +92,72 @@ export function ContractorRequestsListPage() {
     <div className="sp-page">
       <PageHeader
         title="Заявки подрядчикам"
-        description="Создание и просмотр заявок на работы подрядчиков."
+        description="Рабочий список заявок Contractor Requests с серверными фильтрами."
         actions={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/applications/contractor-requests/new')}>
-            Создать заявку
-          </Button>
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={() => reload()}>
+              Обновить
+            </Button>
+            {auth.hasPermission('requests.create') ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/applications/contractor-requests/new')}>
+                Создать заявку
+              </Button>
+            ) : null}
+          </Space>
         }
       />
       <Card>
         <div className="cr-toolbar">
-          <SearchBar placeholder="Поиск по номеру, заголовку или описанию" onSearch={setSearch} />
+          <SearchBar placeholder="Поиск по номеру, заголовку или описанию" onSearch={(search) => setFilters((current) => ({ ...current, search: search || undefined }))} />
           <Select
             allowClear
             placeholder="Статус"
             className="cr-filter"
-            options={[
-              { label: 'NEW', value: 'NEW' },
-              { label: 'ASSIGNED', value: 'ASSIGNED' },
-            ]}
+            options={requestStatuses.map((status) => ({ label: status, value: status }))}
             onChange={(status?: RequestStatus) => setFilters((current) => ({ ...current, status }))}
           />
-          <Select allowClear disabled placeholder="Приоритет" className="cr-filter" onChange={(priority?: string) => setFilters((current) => ({ ...current, priority }))} />
+          <Select
+            allowClear
+            placeholder="Приоритет"
+            className="cr-filter"
+            options={[
+              { label: 'Низкий', value: 'low' },
+              { label: 'Обычный', value: 'normal' },
+              { label: 'Высокий', value: 'high' },
+            ]}
+            onChange={(priority?: string) => setFilters((current) => ({ ...current, priority }))}
+          />
           <Select
             allowClear
             placeholder="Город"
             className="cr-filter"
             options={referenceData.cities.map((city) => ({ label: city.name, value: city.id }))}
-            onChange={(cityId?: Uuid) => setFilters((current) => ({ ...current, cityId }))}
+            onChange={(city_id?: Uuid) => setFilters((current) => ({ ...current, city_id }))}
           />
           <Select
             allowClear
             placeholder="Объект"
             className="cr-filter"
             options={referenceData.facilities.map((facility) => ({ label: facility.name, value: facility.id }))}
-            onChange={(facilityId?: Uuid) => setFilters((current) => ({ ...current, facilityId }))}
+            onChange={(facility_id?: Uuid) => setFilters((current) => ({ ...current, facility_id }))}
           />
           <Select
             allowClear
             placeholder="Направление"
             className="cr-filter"
             options={referenceData.workTypes.map((workType) => ({ label: getWorkTypeLabel(workType), value: workType.id }))}
-            onChange={(workTypeId?: Uuid) => setFilters((current) => ({ ...current, workTypeId }))}
+            onChange={(work_type_id?: Uuid) => setFilters((current) => ({ ...current, work_type_id }))}
           />
         </div>
       </Card>
       <Section>
-        {filteredRequests.length === 0 ? (
+        {requests.length === 0 ? (
           <EmptyState title="Заявки не найдены" description="Измените фильтры или создайте новую заявку." />
         ) : (
           <Table<ContractorRequest>
             rowKey="id"
             columns={columns}
-            dataSource={filteredRequests}
+            dataSource={requests}
             pagination={{ pageSize: 10, showSizeChanger: true }}
             onRow={(record) => ({
               onDoubleClick: () => navigate(`/applications/contractor-requests/${record.id}`),
@@ -160,9 +165,6 @@ export function ContractorRequestsListPage() {
           />
         )}
       </Section>
-      <div className="cr-api-note">
-        <AppstoreOutlined /> Приоритет и желаемый срок пока не возвращаются backend API.
-      </div>
     </div>
   );
 }
