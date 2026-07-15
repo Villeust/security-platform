@@ -1,5 +1,7 @@
-import { Button, Result } from 'antd';
+import { Result } from 'antd';
 import { Link } from 'react-router-dom';
+
+import { Button } from '../components/design-system';
 
 export function NotFoundPage() {
   return (

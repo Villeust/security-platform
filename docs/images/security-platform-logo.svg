@@ -1,0 +1,28 @@
+<svg width="960" height="260" viewBox="0 0 960 260" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Security Platform Logo</title>
+  <desc id="desc">Minimal corporate shield logo with SP letters and digital network lines.</desc>
+  <rect width="960" height="260" rx="24" fill="#071B33"/>
+  <g opacity="0.42" stroke="#58C7F3" stroke-width="1.5">
+    <path d="M106 52H218L270 100"/>
+    <path d="M95 205H210L275 158"/>
+    <path d="M760 55H845L892 102"/>
+    <path d="M735 205H850L902 160"/>
+    <circle cx="106" cy="52" r="4" fill="#58C7F3"/>
+    <circle cx="270" cy="100" r="4" fill="#58C7F3"/>
+    <circle cx="95" cy="205" r="4" fill="#58C7F3"/>
+    <circle cx="275" cy="158" r="4" fill="#58C7F3"/>
+    <circle cx="760" cy="55" r="4" fill="#58C7F3"/>
+    <circle cx="902" cy="160" r="4" fill="#58C7F3"/>
+  </g>
+  <g transform="translate(92 42)">
+    <path d="M96 0L176 30V90C176 137 144 174 96 196C48 174 16 137 16 90V30L96 0Z" fill="#0E315A" stroke="#58C7F3" stroke-width="6"/>
+    <path d="M96 20L154 42V88C154 124 132 152 96 171C60 152 38 124 38 88V42L96 20Z" fill="#0B2748" stroke="white" stroke-opacity="0.76" stroke-width="2"/>
+    <text x="96" y="114" text-anchor="middle" fill="white" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="58" font-weight="700" letter-spacing="2">SP</text>
+    <path d="M58 132H134" stroke="#58C7F3" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(330 78)">
+    <text x="0" y="48" fill="white" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="46" font-weight="700">Security Platform</text>
+    <text x="2" y="92" fill="#A9C4DE" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="400">Enterprise physical security operations platform</text>
+    <path d="M2 122H420" stroke="#58C7F3" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

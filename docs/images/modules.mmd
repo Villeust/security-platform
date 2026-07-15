@@ -1,0 +1,17 @@
+flowchart LR
+    Platform[Security Platform]
+    Platform --> Core[Core Platform]
+    Platform --> Modules[Business Modules]
+
+    Core --> API[Backend API]
+    Core --> UI[Frontend Shell]
+    Core --> DB[(PostgreSQL)]
+    Core --> DX[Developer Toolkit]
+
+    Modules --> Contractor[Contractor Requests<br/>MVP]
+    Modules --> Access[Access Control<br/>Planned]
+    Modules --> Cameras[CCTV<br/>Planned]
+    Modules --> Visitors[Visitor Management<br/>Planned]
+    Modules --> Incidents[Incident Management<br/>Planned]
+    Modules --> Monitoring[Monitoring<br/>Planned]
+    Modules --> Reports[Reports & Analytics<br/>Planned]

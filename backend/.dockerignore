@@ -1,0 +1,6 @@
+.env
+.venv
+.uv-venv
+.uv-cache
+__pycache__
+.pytest_cache
