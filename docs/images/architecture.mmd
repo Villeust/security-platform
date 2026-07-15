@@ -1,0 +1,21 @@
+flowchart TD
+    SP[Security Platform]
+    FE[Frontend<br/>React + TypeScript]
+    API[Backend API<br/>FastAPI]
+    SVC[Services]
+    REP[Repositories]
+    DB[(PostgreSQL)]
+
+    SP --> FE
+    FE --> API
+    API --> SVC
+    SVC --> REP
+    REP --> DB
+
+    SP --> MOD[Modules]
+    MOD --> CR[Contractor Requests]
+    MOD --> AC[Access Control]
+    MOD --> CCTV[CCTV]
+    MOD --> VM[Visitor Management]
+    MOD --> MON[Monitoring]
+    MOD --> RPT[Reports]
