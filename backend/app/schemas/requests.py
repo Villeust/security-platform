@@ -77,6 +77,7 @@ class ContractorRequestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    request_number: str | None
     city_id: UUID
     facility_id: UUID
     premise_id: UUID | None
@@ -95,6 +96,7 @@ class ContractorRequestResponse(BaseModel):
 
 class ContractorRequestListResponse(BaseModel):
     id: UUID
+    request_number: str | None
     city_id: UUID
     facility_id: UUID
     premise_id: UUID | None

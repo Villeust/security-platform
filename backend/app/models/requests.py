@@ -27,6 +27,7 @@ class ContractorRequest(TimestampMixin, Base):
     __tablename__ = "contractor_requests"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    request_number: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     city_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("cities.id", ondelete="RESTRICT"),

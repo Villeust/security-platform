@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     project_name: str = "Contractor Requests API"
+    environment: str = Field(default="development", alias="ENVIRONMENT")
     api_v1_prefix: str = "/api/v1"
     backend_cors_origins: list[str] = Field(
         default=["http://localhost:3000"],

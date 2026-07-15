@@ -29,6 +29,7 @@ def serialize_contractor_request(
     ]
     return ContractorRequestListResponse(
         id=request.id,
+        request_number=request.request_number,
         city_id=request.city_id,
         facility_id=request.facility_id,
         premise_id=request.premise_id,

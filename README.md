@@ -32,6 +32,31 @@ uv sync
 uv run pytest
 ```
 
+## Demo seed
+
+Run the local demo seed explicitly:
+
+```bash
+cd backend
+uv run python -m app.scripts.seed_demo
+```
+
+The seed is idempotent, so the same command can be repeated without creating duplicates:
+
+```bash
+uv run python -m app.scripts.seed_demo
+```
+
+Swagger: http://localhost:8000/docs
+
+Example contractor API checks use the UUID values printed by the seed:
+
+```bash
+curl -H "X-Contractor-Id: <contractor-uuid>" http://localhost:8000/api/v1/contractor/requests
+curl -H "X-Contractor-Id: <contractor-uuid>" http://localhost:8000/api/v1/contractor/requests/<request-uuid>
+curl -X POST -H "X-Contractor-Id: <contractor-uuid>" http://localhost:8000/api/v1/contractor/requests/<request-uuid>/accept
+```
+
 ## Frontend build
 
 ```bash
