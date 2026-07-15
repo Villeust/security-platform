@@ -1,9 +1,12 @@
 import { ArrowLeftOutlined, CheckCircleOutlined, CloseCircleOutlined, PlayCircleOutlined, SendOutlined, UndoOutlined } from '@ant-design/icons';
-import { Descriptions, Space, Tag, Timeline, message } from 'antd';
+import { Descriptions, Space, Tabs, Tag, Timeline, message } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { Button, Card, ErrorState, Loader, PageHeader, Section, Table } from '../../components/design-system';
+import { AssignmentWorkResults } from './components/AssignmentWorkResults';
+import { RequestAttachments } from './components/RequestAttachments';
+import { RequestComments } from './components/RequestComments';
 import { RequestStatusBadge } from './components/RequestStatusBadge';
 import { useReferenceData } from './hooks/useReferenceData';
 import { getRequest, getRequestHistory, publishRequest, updateRequestStatus } from './services/requestService';
@@ -69,6 +72,13 @@ export function ContractorRequestDetailPage() {
   }, [load]);
 
   const actions = useMemo(() => (request ? statusActions[request.status] ?? [] : []), [request]);
+
+  async function refreshCollaboration() {
+    if (!request) {
+      return;
+    }
+    setHistory(await getRequestHistory(request.id));
+  }
 
   async function publish() {
     if (!request) {
@@ -148,55 +158,89 @@ export function ContractorRequestDetailPage() {
           </Space>
         }
       />
-      <Section title="Основная информация">
-        <Card>
-          <Descriptions bordered column={2}>
-            <Descriptions.Item label="Статус">
-              <RequestStatusBadge status={request.status} />
-            </Descriptions.Item>
-            <Descriptions.Item label="Приоритет">{request.priority ?? '—'}</Descriptions.Item>
-            <Descriptions.Item label="Город">{referenceData.cities.find((city) => city.id === request.city_id)?.name ?? '—'}</Descriptions.Item>
-            <Descriptions.Item label="Объект">{request.facility_id ? facilityName(request.facility_id, referenceData.facilities) : '—'}</Descriptions.Item>
-            <Descriptions.Item label="Помещение">{referenceData.premises.find((premise) => premise.id === request.premise_id)?.name ?? '—'}</Descriptions.Item>
-            <Descriptions.Item label="Желаемый срок">{formatDate(request.desired_completion_date)}</Descriptions.Item>
-            <Descriptions.Item label="Направления">
-              <Space wrap>
-                {labelsByIds(request.work_type_ids, referenceData.workTypes, getWorkTypeLabel).map((label) => (
-                  <Tag key={label}>{label}</Tag>
-                ))}
-              </Space>
-            </Descriptions.Item>
-            <Descriptions.Item label="Дата создания">{formatDate(request.created_at)}</Descriptions.Item>
-            <Descriptions.Item label="Завершено">{formatDate(request.completed_at)}</Descriptions.Item>
-            <Descriptions.Item label="Закрыто">{formatDate(request.closed_at)}</Descriptions.Item>
-            <Descriptions.Item label="Контакт">{request.contact_name ?? '—'}</Descriptions.Item>
-            <Descriptions.Item label="Email">{request.contact_email ?? '—'}</Descriptions.Item>
-            <Descriptions.Item label="Телефон">{request.contact_phone ?? '—'}</Descriptions.Item>
-            <Descriptions.Item label="Описание">{request.description ?? '—'}</Descriptions.Item>
-          </Descriptions>
-        </Card>
-      </Section>
-      <Section title="Назначения подрядчиков">
-        <Table<RequestAssignment> rowKey="id" columns={assignmentColumns} dataSource={request.assignments} />
-      </Section>
-      <Section title="История изменений">
-        <Card>
-          <Timeline
-            items={history.map((item) => ({
-              children: (
-                <Space direction="vertical" size={2}>
-                  <span>
-                    {item.event_type}
-                    {item.old_status || item.new_status ? `: ${item.old_status ?? '—'} → ${item.new_status ?? '—'}` : ''}
-                  </span>
-                  <span>{formatDate(item.created_at)}</span>
-                  {item.comment && <span>{item.comment}</span>}
-                </Space>
-              ),
-            }))}
-          />
-        </Card>
-      </Section>
+      <Tabs
+        items={[
+          {
+            key: 'main',
+            label: 'Основная информация',
+            children: (
+              <Section>
+                <Card>
+                  <Descriptions bordered column={2}>
+                    <Descriptions.Item label="Статус">
+                      <RequestStatusBadge status={request.status} />
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Приоритет">{request.priority ?? '—'}</Descriptions.Item>
+                    <Descriptions.Item label="Город">{referenceData.cities.find((city) => city.id === request.city_id)?.name ?? '—'}</Descriptions.Item>
+                    <Descriptions.Item label="Объект">{request.facility_id ? facilityName(request.facility_id, referenceData.facilities) : '—'}</Descriptions.Item>
+                    <Descriptions.Item label="Помещение">{referenceData.premises.find((premise) => premise.id === request.premise_id)?.name ?? '—'}</Descriptions.Item>
+                    <Descriptions.Item label="Желаемый срок">{formatDate(request.desired_completion_date)}</Descriptions.Item>
+                    <Descriptions.Item label="Направления">
+                      <Space wrap>
+                        {labelsByIds(request.work_type_ids, referenceData.workTypes, getWorkTypeLabel).map((label) => (
+                          <Tag key={label}>{label}</Tag>
+                        ))}
+                      </Space>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Дата создания">{formatDate(request.created_at)}</Descriptions.Item>
+                    <Descriptions.Item label="Завершено">{formatDate(request.completed_at)}</Descriptions.Item>
+                    <Descriptions.Item label="Закрыто">{formatDate(request.closed_at)}</Descriptions.Item>
+                    <Descriptions.Item label="Контакт">{request.contact_name ?? '—'}</Descriptions.Item>
+                    <Descriptions.Item label="Email">{request.contact_email ?? '—'}</Descriptions.Item>
+                    <Descriptions.Item label="Телефон">{request.contact_phone ?? '—'}</Descriptions.Item>
+                    <Descriptions.Item label="Описание">{request.description ?? '—'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
+              </Section>
+            ),
+          },
+          {
+            key: 'execution',
+            label: 'Исполнение',
+            children: (
+              <Section>
+                <Table<RequestAssignment> rowKey="id" columns={assignmentColumns} dataSource={request.assignments} />
+                <AssignmentWorkResults requestId={request.id} assignments={request.assignments} contractors={referenceData.contractors} workTypes={referenceData.workTypes} mode="internal" />
+              </Section>
+            ),
+          },
+          {
+            key: 'comments',
+            label: 'Комментарии',
+            children: <RequestComments requestId={request.id} mode="internal" />,
+          },
+          {
+            key: 'attachments',
+            label: 'Вложения',
+            children: <RequestAttachments requestId={request.id} mode="internal" />,
+          },
+          {
+            key: 'history',
+            label: 'История',
+            children: (
+              <Section>
+                <Card>
+                  <Timeline
+                    items={history.map((item) => ({
+                      children: (
+                        <Space direction="vertical" size={2}>
+                          <span>
+                            {item.event_type}
+                            {item.old_status || item.new_status ? `: ${item.old_status ?? '—'} → ${item.new_status ?? '—'}` : ''}
+                          </span>
+                          <span>{formatDate(item.created_at)}</span>
+                          {item.comment && <span>{item.comment}</span>}
+                        </Space>
+                      ),
+                    }))}
+                  />
+                  <Button onClick={refreshCollaboration}>Обновить историю</Button>
+                </Card>
+              </Section>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

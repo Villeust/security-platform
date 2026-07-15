@@ -6,6 +6,8 @@ __pycache__/
 .uv-venv/
 .uv-cache/
 .dev-runtime/
+backend/storage/*
+!backend/storage/.gitkeep
 *.db
 node_modules/
 dist/

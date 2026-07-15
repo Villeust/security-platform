@@ -12,8 +12,16 @@ export type RequestHistoryEventType =
   | 'ASSIGNMENT_STATUS_CHANGED'
   | 'REOPENED'
   | 'CLOSED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'COMMENT_ADDED'
+  | 'COMMENT_UPDATED'
+  | 'COMMENT_DELETED'
+  | 'ATTACHMENT_ADDED'
+  | 'ATTACHMENT_DELETED'
+  | 'WORK_RESULT_ADDED';
 export type RequestHistoryActorType = 'SYSTEM' | 'INTERNAL_USER' | 'CONTRACTOR_USER';
+export type RequestVisibility = 'SHARED' | 'INTERNAL';
+export type RequestAttachmentCategory = 'REQUEST_FILE' | 'WORK_RESULT' | 'ACT' | 'PHOTO' | 'DOCUMENT' | 'OTHER';
 
 export type City = {
   id: Uuid;
@@ -76,8 +84,8 @@ export type RequestAssignment = {
 export type ContractorRequest = {
   id: Uuid;
   request_number: string | null;
-  city_id: Uuid;
-  facility_id: Uuid;
+  city_id: Uuid | null;
+  facility_id: Uuid | null;
   premise_id: Uuid | null;
   title: string;
   description: string | null;
@@ -144,4 +152,36 @@ export type RequestListParams = {
   limit?: number;
   sort_by?: 'created_at' | 'updated_at' | 'number' | 'status' | 'priority' | 'desired_completion_date';
   sort_order?: 'asc' | 'desc';
+};
+
+export type RequestComment = {
+  id: Uuid;
+  request_id: Uuid;
+  author_type: RequestHistoryActorType;
+  author_id: Uuid | null;
+  contractor_id: Uuid | null;
+  visibility: RequestVisibility;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  is_edited: boolean;
+  is_deleted: boolean;
+};
+
+export type RequestAttachment = {
+  id: Uuid;
+  request_id: Uuid;
+  assignment_id: Uuid | null;
+  comment_id: Uuid | null;
+  uploaded_by_type: RequestHistoryActorType;
+  uploaded_by_id: Uuid | null;
+  contractor_id: Uuid | null;
+  category: RequestAttachmentCategory;
+  visibility: RequestVisibility;
+  original_filename: string;
+  mime_type: string;
+  size_bytes: number;
+  checksum_sha256: string;
+  created_at: string;
+  is_deleted: boolean;
 };

@@ -2,12 +2,15 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.api.deps import get_current_internal_actor_id
 from app.db.session import get_db
-from app.models.requests import ContractorRequest, RequestAssignment, RequestHistory, RequestStatus, RequestWorkType
+from app.models.requests import ContractorRequest, RequestAssignment, RequestAttachmentCategory, RequestHistory, RequestHistoryActorType, RequestStatus, RequestVisibility, RequestWorkType
+from app.schemas.collaboration import RequestAttachmentResponse, RequestCommentCreate, RequestCommentResponse, RequestCommentUpdate
 from app.schemas.requests import (
     ContractorRequestCreate,
     ContractorRequestResponse,
@@ -22,6 +25,8 @@ from app.services.request_service import (
     unassigned_work_type_ids,
     update_contractor_request,
 )
+from app.services.attachment_service import attachment_file_path, create_attachment, delete_attachment, get_attachment_or_404, list_internal_attachments
+from app.services.comment_service import create_internal_comment, delete_comment, get_comment_or_404, list_internal_comments, serialize_comment_body, update_comment
 
 router = APIRouter(prefix="/requests", tags=["contractor requests"])
 
@@ -66,6 +71,26 @@ def serialize_history(history: RequestHistory) -> RequestHistoryItem:
         actor_type=history.actor_type,
         actor_id=history.actor_id,
     )
+
+
+def serialize_comment(comment) -> RequestCommentResponse:
+    return RequestCommentResponse(
+        id=comment.id,
+        request_id=comment.request_id,
+        author_type=comment.author_type,
+        author_id=comment.author_id,
+        contractor_id=comment.contractor_id,
+        visibility=comment.visibility,
+        body=serialize_comment_body(comment),
+        created_at=comment.created_at,
+        updated_at=comment.updated_at,
+        is_edited=comment.is_edited,
+        is_deleted=comment.is_deleted,
+    )
+
+
+def serialize_attachment(attachment) -> RequestAttachmentResponse:
+    return RequestAttachmentResponse.model_validate(attachment)
 
 
 def unassigned_work_type_ids_fn(request: ContractorRequest) -> list[UUID]:
@@ -234,3 +259,97 @@ def get_request_history(request_id: UUID, db: Session = Depends(get_db)) -> list
     get_request_or_404(db, request_id)
     history = db.scalars(select(RequestHistory).where(RequestHistory.request_id == request_id).order_by(RequestHistory.created_at.asc())).all()
     return [serialize_history(item) for item in history]
+
+
+@router.get("/{request_id}/comments", response_model=list[RequestCommentResponse], summary="List request comments")
+def list_request_comments(request_id: UUID, db: Session = Depends(get_db)) -> list[RequestCommentResponse]:
+    request = get_request_or_404(db, request_id)
+    return [serialize_comment(comment) for comment in list_internal_comments(db, request)]
+
+
+@router.post("/{request_id}/comments", response_model=RequestCommentResponse, status_code=status.HTTP_201_CREATED, summary="Create request comment")
+def create_request_comment(
+    request_id: UUID,
+    payload: RequestCommentCreate,
+    db: Session = Depends(get_db),
+    actor_id: UUID | None = Depends(get_current_internal_actor_id),
+) -> RequestCommentResponse:
+    request = get_request_or_404(db, request_id)
+    return serialize_comment(create_internal_comment(db, request, payload, actor_id))
+
+
+@router.patch("/{request_id}/comments/{comment_id}", response_model=RequestCommentResponse, summary="Update request comment")
+def update_request_comment(
+    request_id: UUID,
+    comment_id: UUID,
+    payload: RequestCommentUpdate,
+    db: Session = Depends(get_db),
+    actor_id: UUID | None = Depends(get_current_internal_actor_id),
+) -> RequestCommentResponse:
+    request = get_request_or_404(db, request_id)
+    comment = get_comment_or_404(db, request_id, comment_id)
+    return serialize_comment(update_comment(db, request, comment, payload, RequestHistoryActorType.INTERNAL_USER, actor_id))
+
+
+@router.delete("/{request_id}/comments/{comment_id}", response_model=RequestCommentResponse, summary="Delete request comment")
+def delete_request_comment(
+    request_id: UUID,
+    comment_id: UUID,
+    db: Session = Depends(get_db),
+    actor_id: UUID | None = Depends(get_current_internal_actor_id),
+) -> RequestCommentResponse:
+    request = get_request_or_404(db, request_id)
+    comment = get_comment_or_404(db, request_id, comment_id)
+    return serialize_comment(delete_comment(db, request, comment, RequestHistoryActorType.INTERNAL_USER, actor_id))
+
+
+@router.get("/{request_id}/attachments", response_model=list[RequestAttachmentResponse], summary="List request attachments")
+def list_request_attachments(request_id: UUID, db: Session = Depends(get_db)) -> list[RequestAttachmentResponse]:
+    request = get_request_or_404(db, request_id)
+    return [serialize_attachment(attachment) for attachment in list_internal_attachments(db, request)]
+
+
+@router.post("/{request_id}/attachments", response_model=RequestAttachmentResponse, status_code=status.HTTP_201_CREATED, summary="Upload request attachment")
+async def upload_request_attachment(
+    request_id: UUID,
+    file: UploadFile = File(...),
+    category: RequestAttachmentCategory = Form(...),
+    visibility: RequestVisibility = Form(...),
+    assignment_id: UUID | None = Form(default=None),
+    comment_id: UUID | None = Form(default=None),
+    db: Session = Depends(get_db),
+    actor_id: UUID | None = Depends(get_current_internal_actor_id),
+) -> RequestAttachmentResponse:
+    request = get_request_or_404(db, request_id)
+    attachment = await create_attachment(
+        db,
+        request,
+        file,
+        category,
+        visibility,
+        RequestHistoryActorType.INTERNAL_USER,
+        actor_id,
+        None,
+        assignment_id,
+        comment_id,
+    )
+    return serialize_attachment(attachment)
+
+
+@router.get("/{request_id}/attachments/{attachment_id}/download", summary="Download request attachment")
+def download_request_attachment(request_id: UUID, attachment_id: UUID, db: Session = Depends(get_db)) -> FileResponse:
+    get_request_or_404(db, request_id)
+    attachment = get_attachment_or_404(db, request_id, attachment_id)
+    return FileResponse(attachment_file_path(attachment), media_type=attachment.mime_type, filename=attachment.original_filename)
+
+
+@router.delete("/{request_id}/attachments/{attachment_id}", response_model=RequestAttachmentResponse, summary="Delete request attachment")
+def delete_request_attachment(
+    request_id: UUID,
+    attachment_id: UUID,
+    db: Session = Depends(get_db),
+    actor_id: UUID | None = Depends(get_current_internal_actor_id),
+) -> RequestAttachmentResponse:
+    request = get_request_or_404(db, request_id)
+    attachment = get_attachment_or_404(db, request_id, attachment_id)
+    return serialize_attachment(delete_attachment(db, request, attachment, RequestHistoryActorType.INTERNAL_USER, actor_id))

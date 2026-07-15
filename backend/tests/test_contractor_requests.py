@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.config import settings
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
@@ -127,6 +128,37 @@ def create_request(client: TestClient, refs: dict[str, object], work_types: list
     )
     assert response.status_code == 201
     return response.json()
+
+
+@pytest.fixture()
+def storage_root(tmp_path) -> str:  # type: ignore[no-untyped-def]
+    original = settings.storage_root
+    settings.storage_root = str(tmp_path)
+    yield str(tmp_path)
+    settings.storage_root = original
+
+
+def upload_attachment(
+    client: TestClient,
+    request_id: str,
+    filename: str = "result.pdf",
+    content: bytes = b"%PDF-1.4 test",
+    mime_type: str = "application/pdf",
+    category: str = "REQUEST_FILE",
+    visibility: str = "SHARED",
+    assignment_id: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> object:
+    data: dict[str, str] = {"category": category, "visibility": visibility}
+    if assignment_id is not None:
+        data["assignment_id"] = assignment_id
+    response = client.post(
+        f"/api/v1/requests/{request_id}/attachments" if headers is None else f"/api/v1/contractor/requests/{request_id}/attachments",
+        data=data,
+        files={"file": (filename, content, mime_type)},
+        headers=headers,
+    )
+    return response
 
 
 def test_access_control_request_requires_and_uses_premise(client: TestClient, db_session: Session) -> None:
@@ -463,7 +495,7 @@ def test_contractor_accepts_assignment(client: TestClient, db_session: Session) 
     assert response.json()["status"] == "IN_PROGRESS"
 
 
-def test_all_assignments_completed_sets_request_completed(client: TestClient, db_session: Session) -> None:
+def test_all_assignments_completed_sets_request_completed(client: TestClient, db_session: Session, storage_root: str) -> None:
     refs = seed_reference_data(db_session)
     add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
     created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
@@ -471,6 +503,7 @@ def test_all_assignments_completed_sets_request_completed(client: TestClient, db
     headers = {"X-Contractor-Id": str(refs["contractor_a"].id)}  # type: ignore[union-attr]
     client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "ACCEPTED"}, headers=headers)
     client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "IN_PROGRESS"}, headers=headers)
+    upload_attachment(client, created["id"], category="WORK_RESULT", assignment_id=assignment_id, headers=headers)
 
     response = client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "COMPLETED"}, headers=headers)
     request = client.get(f"/api/v1/requests/{created['id']}")
@@ -535,3 +568,274 @@ def test_contractor_history_hides_internal_details(client: TestClient, db_sessio
     assert "UPDATED" not in {item["event_type"] for item in events}
     assert all(item["actor_id"] is None or item["actor_type"] == "CONTRACTOR_USER" for item in events)
     assert all(item["changed_fields"] is None or set(item["changed_fields"]) <= {"assignment_status"} for item in events)
+
+
+def assigned_request(client: TestClient, db_session: Session) -> tuple[dict, dict[str, object]]:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+    return created, refs
+
+
+def test_internal_creates_shared_comment(client: TestClient, db_session: Session) -> None:
+    created, _ = assigned_request(client, db_session)
+
+    response = client.post(f"/api/v1/requests/{created['id']}/comments", json={"body": "Shared note", "visibility": "SHARED"})
+
+    assert response.status_code == 201
+    assert response.json()["visibility"] == "SHARED"
+
+
+def test_internal_creates_internal_comment(client: TestClient, db_session: Session) -> None:
+    created, _ = assigned_request(client, db_session)
+
+    response = client.post(f"/api/v1/requests/{created['id']}/comments", json={"body": "Internal note", "visibility": "INTERNAL"})
+
+    assert response.status_code == 201
+    assert response.json()["visibility"] == "INTERNAL"
+
+
+def test_contractor_creates_shared_comment(client: TestClient, db_session: Session) -> None:
+    created, refs = assigned_request(client, db_session)
+
+    response = client.post(
+        f"/api/v1/contractor/requests/{created['id']}/comments",
+        json={"body": "Contractor note", "visibility": "SHARED"},
+        headers={"X-Contractor-Id": str(refs["contractor_a"].id)},  # type: ignore[union-attr]
+    )
+
+    assert response.status_code == 201
+    assert response.json()["visibility"] == "SHARED"
+
+
+def test_contractor_cannot_create_internal_comment(client: TestClient, db_session: Session) -> None:
+    created, refs = assigned_request(client, db_session)
+
+    response = client.post(
+        f"/api/v1/contractor/requests/{created['id']}/comments",
+        json={"body": "Hidden note", "visibility": "INTERNAL"},
+        headers={"X-Contractor-Id": str(refs["contractor_a"].id)},  # type: ignore[union-attr]
+    )
+
+    assert response.status_code == 403
+
+
+def test_contractor_does_not_see_internal_comment(client: TestClient, db_session: Session) -> None:
+    created, refs = assigned_request(client, db_session)
+    client.post(f"/api/v1/requests/{created['id']}/comments", json={"body": "Internal note", "visibility": "INTERNAL"})
+    client.post(f"/api/v1/requests/{created['id']}/comments", json={"body": "Shared note", "visibility": "SHARED"})
+
+    response = client.get(
+        f"/api/v1/contractor/requests/{created['id']}/comments",
+        headers={"X-Contractor-Id": str(refs["contractor_a"].id)},  # type: ignore[union-attr]
+    )
+
+    assert response.status_code == 200
+    assert [item["body"] for item in response.json()] == ["Shared note"]
+
+
+def test_contractor_does_not_see_comments_for_foreign_request(client: TestClient, db_session: Session) -> None:
+    created, refs = assigned_request(client, db_session)
+
+    response = client.get(
+        f"/api/v1/contractor/requests/{created['id']}/comments",
+        headers={"X-Contractor-Id": str(refs["contractor_b"].id)},  # type: ignore[union-attr]
+    )
+
+    assert response.status_code == 404
+
+
+def test_edit_own_comment(client: TestClient, db_session: Session) -> None:
+    created, _ = assigned_request(client, db_session)
+    actor_id = str(uuid4())
+    comment = client.post(f"/api/v1/requests/{created['id']}/comments", json={"body": "Old", "visibility": "SHARED"}, headers={"X-Actor-Id": actor_id}).json()
+
+    response = client.patch(f"/api/v1/requests/{created['id']}/comments/{comment['id']}", json={"body": "New"}, headers={"X-Actor-Id": actor_id})
+
+    assert response.status_code == 200
+    assert response.json()["body"] == "New"
+    assert response.json()["is_edited"] is True
+
+
+def test_cannot_edit_foreign_comment(client: TestClient, db_session: Session) -> None:
+    created, _ = assigned_request(client, db_session)
+    comment = client.post(f"/api/v1/requests/{created['id']}/comments", json={"body": "Old", "visibility": "SHARED"}, headers={"X-Actor-Id": str(uuid4())}).json()
+
+    response = client.patch(f"/api/v1/requests/{created['id']}/comments/{comment['id']}", json={"body": "New"}, headers={"X-Actor-Id": str(uuid4())})
+
+    assert response.status_code == 403
+
+
+def test_soft_delete_comment(client: TestClient, db_session: Session) -> None:
+    created, _ = assigned_request(client, db_session)
+    actor_id = str(uuid4())
+    comment = client.post(f"/api/v1/requests/{created['id']}/comments", json={"body": "Delete me", "visibility": "SHARED"}, headers={"X-Actor-Id": actor_id}).json()
+
+    response = client.delete(f"/api/v1/requests/{created['id']}/comments/{comment['id']}", headers={"X-Actor-Id": actor_id})
+
+    assert response.status_code == 200
+    assert response.json()["is_deleted"] is True
+    assert response.json()["body"] == "Комментарий удалён"
+
+
+def test_upload_allowed_file(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, _ = assigned_request(client, db_session)
+
+    response = upload_attachment(client, created["id"], filename="photo.jpg", content=b"jpg", mime_type="image/jpeg", category="PHOTO")
+
+    assert response.status_code == 201
+    assert response.json()["original_filename"] == "photo.jpg"
+
+
+def test_forbidden_extension_is_rejected(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, _ = assigned_request(client, db_session)
+
+    response = upload_attachment(client, created["id"], filename="run.exe", content=b"exe", mime_type="application/octet-stream")
+
+    assert response.status_code == 415
+
+
+def test_file_over_size_limit_is_rejected(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, _ = assigned_request(client, db_session)
+
+    response = upload_attachment(client, created["id"], filename="big.pdf", content=b"x" * (20 * 1024 * 1024 + 1), mime_type="application/pdf")
+
+    assert response.status_code == 413
+
+
+def test_checksum_is_created(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, _ = assigned_request(client, db_session)
+
+    response = upload_attachment(client, created["id"], filename="doc.txt", content=b"hello", mime_type="text/plain")
+
+    assert response.status_code == 201
+    assert len(response.json()["checksum_sha256"]) == 64
+
+
+def test_download_accessible_file(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, _ = assigned_request(client, db_session)
+    uploaded = upload_attachment(client, created["id"], filename="doc.txt", content=b"hello", mime_type="text/plain").json()
+
+    response = client.get(f"/api/v1/requests/{created['id']}/attachments/{uploaded['id']}/download")
+
+    assert response.status_code == 200
+    assert response.content == b"hello"
+
+
+def test_contractor_cannot_download_internal_attachment(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, refs = assigned_request(client, db_session)
+    uploaded = upload_attachment(client, created["id"], filename="doc.txt", content=b"hello", mime_type="text/plain", visibility="INTERNAL").json()
+
+    response = client.get(
+        f"/api/v1/contractor/requests/{created['id']}/attachments/{uploaded['id']}/download",
+        headers={"X-Contractor-Id": str(refs["contractor_a"].id)},  # type: ignore[union-attr]
+    )
+
+    assert response.status_code == 404
+
+
+def test_contractor_cannot_download_foreign_attachment(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, refs = assigned_request(client, db_session)
+    uploaded = upload_attachment(client, created["id"], filename="doc.txt", content=b"hello", mime_type="text/plain").json()
+
+    response = client.get(
+        f"/api/v1/contractor/requests/{created['id']}/attachments/{uploaded['id']}/download",
+        headers={"X-Contractor-Id": str(refs["contractor_b"].id)},  # type: ignore[union-attr]
+    )
+
+    assert response.status_code == 404
+
+
+def test_work_result_requires_assignment_id(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, refs = assigned_request(client, db_session)
+
+    response = upload_attachment(
+        client,
+        created["id"],
+        category="WORK_RESULT",
+        headers={"X-Contractor-Id": str(refs["contractor_a"].id)},  # type: ignore[union-attr]
+    )
+
+    assert response.status_code == 422
+
+
+def test_assignment_id_must_belong_to_contractor(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, refs = assigned_request(client, db_session)
+
+    response = upload_attachment(
+        client,
+        created["id"],
+        category="WORK_RESULT",
+        assignment_id=created["assignments"][0]["id"],
+        headers={"X-Contractor-Id": str(refs["contractor_b"].id)},  # type: ignore[union-attr]
+    )
+
+    assert response.status_code == 404
+
+
+def test_completion_without_work_result_is_rejected(client: TestClient, db_session: Session) -> None:
+    created, refs = assigned_request(client, db_session)
+    assignment_id = created["assignments"][0]["id"]
+    headers = {"X-Contractor-Id": str(refs["contractor_a"].id)}  # type: ignore[union-attr]
+    client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "ACCEPTED"}, headers=headers)
+    client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "IN_PROGRESS"}, headers=headers)
+
+    response = client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "COMPLETED"}, headers=headers)
+
+    assert response.status_code == 409
+
+
+def test_completion_with_work_result_is_allowed(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, refs = assigned_request(client, db_session)
+    assignment_id = created["assignments"][0]["id"]
+    headers = {"X-Contractor-Id": str(refs["contractor_a"].id)}  # type: ignore[union-attr]
+    client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "ACCEPTED"}, headers=headers)
+    client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "IN_PROGRESS"}, headers=headers)
+    upload_attachment(client, created["id"], category="WORK_RESULT", assignment_id=assignment_id, headers=headers)
+
+    response = client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "COMPLETED"}, headers=headers)
+
+    assert response.status_code == 200
+
+
+def test_attachment_history_is_recorded(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, _ = assigned_request(client, db_session)
+    upload_attachment(client, created["id"], filename="doc.txt", content=b"hello", mime_type="text/plain")
+
+    history = client.get(f"/api/v1/requests/{created['id']}/history").json()
+
+    assert "ATTACHMENT_ADDED" in {item["event_type"] for item in history}
+
+
+def test_contractor_safe_history_hides_internal_collaboration_events(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, refs = assigned_request(client, db_session)
+    client.post(f"/api/v1/requests/{created['id']}/comments", json={"body": "Internal note", "visibility": "INTERNAL"})
+    upload_attachment(client, created["id"], filename="doc.txt", content=b"hello", mime_type="text/plain", visibility="INTERNAL")
+
+    response = client.get(
+        f"/api/v1/contractor/requests/{created['id']}/history",
+        headers={"X-Contractor-Id": str(refs["contractor_a"].id)},  # type: ignore[union-attr]
+    )
+
+    assert response.status_code == 200
+    assert "COMMENT_ADDED" not in {item["event_type"] for item in response.json()}
+    assert "ATTACHMENT_ADDED" not in {item["event_type"] for item in response.json()}
+
+
+def test_path_traversal_filename_is_rejected(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, _ = assigned_request(client, db_session)
+
+    response = upload_attachment(client, created["id"], filename="../evil.pdf", content=b"evil", mime_type="application/pdf")
+
+    assert response.status_code == 415
+
+
+def test_deleted_attachment_is_not_listed(client: TestClient, db_session: Session, storage_root: str) -> None:
+    created, _ = assigned_request(client, db_session)
+    uploaded = upload_attachment(client, created["id"], filename="doc.txt", content=b"hello", mime_type="text/plain").json()
+
+    delete_response = client.delete(f"/api/v1/requests/{created['id']}/attachments/{uploaded['id']}")
+    listed = client.get(f"/api/v1/requests/{created['id']}/attachments")
+
+    assert delete_response.status_code == 200
+    assert listed.json() == []
