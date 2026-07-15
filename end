@@ -1,0 +1,27 @@
+warning: in the working copy of 'backend/app/api/v1/contractor.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/api/v1/requests.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/models/requests.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/schemas/requests.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/services/request_service.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/test_contractor_requests.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/contractor-requests/ContractorRequestCreatePage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/contractor-requests/ContractorRequestDetailPage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/contractor-requests/ContractorRequestsListPage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/contractor-requests/components/RequestStatusBadge.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/contractor-requests/hooks/useRequests.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/contractor-requests/services/requestService.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/features/contractor-requests/types/api.ts', LF will be replaced by CRLF the next time Git touches it
+ backend/app/api/v1/contractor.py                   |  93 [32m+++[m[31m--[m
+ backend/app/api/v1/requests.py                     | 176 [32m++++++++[m[31m--[m
+ backend/app/models/requests.py                     |  76 [32m++++[m[31m-[m
+ backend/app/schemas/requests.py                    |  48 [32m++[m[31m-[m
+ backend/app/services/request_service.py            | 374 [32m++++++++++++++++++[m[31m---[m
+ backend/tests/test_contractor_requests.py          | 275 [32m+++++++++++++++[m
+ .../ContractorRequestCreatePage.tsx                |  47 [32m+[m[31m--[m
+ .../ContractorRequestDetailPage.tsx                | 141 [32m++++++[m[31m--[m
+ .../ContractorRequestsListPage.tsx                 |  98 [32m+++[m[31m---[m
+ .../components/RequestStatusBadge.tsx              |   4 [32m+[m[31m-[m
+ .../contractor-requests/hooks/useRequests.ts       |   8 [32m+[m[31m-[m
+ .../contractor-requests/services/requestService.ts |  21 [32m+[m[31m-[m
+ .../src/features/contractor-requests/types/api.ts  |  55 [32m++[m[31m-[m
+ 13 files changed, 1206 insertions(+), 210 deletions(-)

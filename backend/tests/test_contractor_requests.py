@@ -112,6 +112,7 @@ def request_payload(
         "city_id": str(city.id),
         "facility_id": str(facility.id),
         "title": "Install security equipment",
+        "description": "Install and configure equipment.",
         "work_type_ids": work_type_ids,
     }
     if premise:
@@ -260,3 +261,277 @@ def test_query_or_body_contractor_id_does_not_grant_foreign_access(client: TestC
     assert list_response.status_code == 200
     assert list_response.json() == []
     assert status_response.status_code == 404
+
+
+def create_draft(client: TestClient, payload: dict[str, object]) -> dict:
+    response = client.post("/api/v1/requests", json={**payload, "save_as_draft": True})
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_create_draft(client: TestClient) -> None:
+    created = create_draft(client, {"title": "Draft request", "description": "Draft description"})
+
+    assert created["status"] == "DRAFT"
+    assert created["request_number"]
+    assert created["assignments"] == []
+
+
+def test_draft_allows_incomplete_data(client: TestClient) -> None:
+    created = create_draft(client, {"title": "Incomplete draft", "description": "Only the required draft fields"})
+
+    assert created["city_id"] is None
+    assert created["facility_id"] is None
+    assert created["work_type_ids"] == []
+
+
+def test_publish_full_request(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    draft = create_draft(client, request_payload(refs, [str(refs["cctv"].id)], premise=False))  # type: ignore[union-attr]
+
+    response = client.post(f"/api/v1/requests/{draft['id']}/publish")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ASSIGNED"
+    assert len(response.json()["assignments"]) == 1
+
+
+def test_publish_incomplete_request_returns_error(client: TestClient) -> None:
+    draft = create_draft(client, {"title": "Incomplete", "description": "Missing scope"})
+
+    response = client.post(f"/api/v1/requests/{draft['id']}/publish")
+
+    assert response.status_code == 422
+
+
+def test_repeat_publish_does_not_duplicate_assignments(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    draft = create_draft(client, request_payload(refs, [str(refs["cctv"].id)], premise=False))  # type: ignore[union-attr]
+
+    first = client.post(f"/api/v1/requests/{draft['id']}/publish")
+    second = client.post(f"/api/v1/requests/{draft['id']}/publish")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert len(second.json()["assignments"]) == 1
+
+
+def test_assigned_when_all_work_types_have_contractors(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["access_control"], facility=refs["facility"])  # type: ignore[arg-type]
+    add_responsibility(db_session, refs["contractor_b"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+
+    created = create_request(client, refs, [refs["access_control"], refs["cctv"]])  # type: ignore[list-item]
+
+    assert created["status"] == "ASSIGNED"
+
+
+def test_partially_assigned_when_only_some_work_types_have_contractors(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["access_control"], facility=refs["facility"])  # type: ignore[arg-type]
+
+    created = create_request(client, refs, [refs["access_control"], refs["cctv"]])  # type: ignore[list-item]
+
+    assert created["status"] == "PARTIALLY_ASSIGNED"
+    assert created["unassigned_work_type_ids"] == [str(refs["cctv"].id)]  # type: ignore[union-attr]
+
+
+def test_new_when_no_contractors_found(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+
+    assert created["status"] == "NEW"
+    assert created["assignments"] == []
+
+
+def test_valid_status_transition(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+
+    response = client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "IN_PROGRESS"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "IN_PROGRESS"
+
+
+def test_invalid_status_transition(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+
+    response = client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "CLOSED"})
+
+    assert response.status_code == 409
+
+
+def test_completed_sets_completed_at(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+    client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "IN_PROGRESS"})
+
+    response = client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "COMPLETED"})
+
+    assert response.status_code == 200
+    assert response.json()["completed_at"] is not None
+
+
+def test_closed_sets_closed_at(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+    client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "IN_PROGRESS"})
+    client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "COMPLETED"})
+
+    response = client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "CLOSED"})
+
+    assert response.status_code == 200
+    assert response.json()["closed_at"] is not None
+
+
+def test_completed_can_return_to_in_progress(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+    client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "IN_PROGRESS"})
+    client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "COMPLETED"})
+
+    response = client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "IN_PROGRESS"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "IN_PROGRESS"
+    assert response.json()["completed_at"] is None
+
+
+def test_edit_draft(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    draft = create_draft(client, {"title": "Draft", "description": "Draft description"})
+
+    response = client.patch(
+        f"/api/v1/requests/{draft['id']}",
+        json={
+            "city_id": str(refs["city"].id),  # type: ignore[union-attr]
+            "facility_id": str(refs["facility"].id),  # type: ignore[union-attr]
+            "title": "Updated draft",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Updated draft"
+
+
+def test_closed_request_cannot_be_edited(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+    client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "IN_PROGRESS"})
+    client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "COMPLETED"})
+    client.post(f"/api/v1/requests/{created['id']}/status", json={"status": "CLOSED"})
+
+    response = client.patch(f"/api/v1/requests/{created['id']}", json={"title": "Nope"})
+
+    assert response.status_code == 409
+
+
+def test_changed_fields_are_recorded(client: TestClient) -> None:
+    draft = create_draft(client, {"title": "Old", "description": "Draft description"})
+
+    response = client.patch(f"/api/v1/requests/{draft['id']}", json={"title": "New"})
+    history = client.get(f"/api/v1/requests/{draft['id']}/history")
+
+    assert response.status_code == 200
+    updated = [item for item in history.json() if item["event_type"] == "UPDATED"]
+    assert updated[-1]["changed_fields"]["title"] == {"old": "Old", "new": "New"}
+
+
+def test_contractor_accepts_assignment(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+
+    response = client.post(
+        f"/api/v1/contractor/requests/{created['id']}/accept",
+        headers={"X-Contractor-Id": str(refs["contractor_a"].id)},  # type: ignore[union-attr]
+    )
+
+    assert response.status_code == 200
+    assert response.json()["assignments"][0]["status"] == "ACCEPTED"
+    assert response.json()["status"] == "IN_PROGRESS"
+
+
+def test_all_assignments_completed_sets_request_completed(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+    assignment_id = created["assignments"][0]["id"]
+    headers = {"X-Contractor-Id": str(refs["contractor_a"].id)}  # type: ignore[union-attr]
+    client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "ACCEPTED"}, headers=headers)
+    client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "IN_PROGRESS"}, headers=headers)
+
+    response = client.post(f"/api/v1/contractor/assignments/{assignment_id}/status", json={"status": "COMPLETED"}, headers=headers)
+    request = client.get(f"/api/v1/requests/{created['id']}")
+
+    assert response.status_code == 200
+    assert request.json()["status"] == "COMPLETED"
+
+
+def test_server_side_search(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    response = client.post(
+        "/api/v1/requests",
+        json={**request_payload(refs, [str(refs["cctv"].id)], premise=False), "title": "Unique Needle Request"},  # type: ignore[union-attr]
+    )
+    assert response.status_code == 201
+
+    listed = client.get("/api/v1/requests", params={"search": "Needle"})
+
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [response.json()["id"]]
+
+
+def test_server_side_filters(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+
+    listed = client.get(
+        "/api/v1/requests",
+        params={
+            "status": "ASSIGNED",
+            "city_id": str(refs["city"].id),  # type: ignore[union-attr]
+            "facility_id": str(refs["facility"].id),  # type: ignore[union-attr]
+            "work_type_id": str(refs["cctv"].id),  # type: ignore[union-attr]
+            "contractor_id": str(refs["contractor_a"].id),  # type: ignore[union-attr]
+            "sort_by": "number",
+            "sort_order": "asc",
+        },
+    )
+
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [created["id"]]
+
+
+def test_contractor_history_hides_internal_details(client: TestClient, db_session: Session) -> None:
+    refs = seed_reference_data(db_session)
+    add_responsibility(db_session, refs["contractor_a"], refs["cctv"], facility=refs["facility"])  # type: ignore[arg-type]
+    created = create_request(client, refs, [refs["cctv"]], premise=False)  # type: ignore[list-item]
+    client.patch(f"/api/v1/requests/{created['id']}", json={"title": "Internal update"})
+    client.post(
+        f"/api/v1/contractor/requests/{created['id']}/accept",
+        headers={"X-Contractor-Id": str(refs["contractor_a"].id)},  # type: ignore[union-attr]
+    )
+
+    response = client.get(
+        f"/api/v1/contractor/requests/{created['id']}/history",
+        headers={"X-Contractor-Id": str(refs["contractor_a"].id)},  # type: ignore[union-attr]
+    )
+
+    assert response.status_code == 200
+    events = response.json()
+    assert "UPDATED" not in {item["event_type"] for item in events}
+    assert all(item["actor_id"] is None or item["actor_type"] == "CONTRACTOR_USER" for item in events)
+    assert all(item["changed_fields"] is None or set(item["changed_fields"]) <= {"assignment_status"} for item in events)

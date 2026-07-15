@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
@@ -11,8 +11,14 @@ from app.models.reference_data import Contractor, Facility, Premise, TimestampMi
 
 
 class RequestStatus(StrEnum):
+    DRAFT = "DRAFT"
     NEW = "NEW"
+    PARTIALLY_ASSIGNED = "PARTIALLY_ASSIGNED"
     ASSIGNED = "ASSIGNED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    CLOSED = "CLOSED"
+    CANCELLED = "CANCELLED"
 
 
 class AssignmentStatus(StrEnum):
@@ -23,21 +29,40 @@ class AssignmentStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class RequestHistoryEventType(StrEnum):
+    CREATED = "CREATED"
+    UPDATED = "UPDATED"
+    PUBLISHED = "PUBLISHED"
+    STATUS_CHANGED = "STATUS_CHANGED"
+    ASSIGNMENT_CREATED = "ASSIGNMENT_CREATED"
+    ASSIGNMENT_ACCEPTED = "ASSIGNMENT_ACCEPTED"
+    ASSIGNMENT_STATUS_CHANGED = "ASSIGNMENT_STATUS_CHANGED"
+    REOPENED = "REOPENED"
+    CLOSED = "CLOSED"
+    CANCELLED = "CANCELLED"
+
+
+class RequestHistoryActorType(StrEnum):
+    SYSTEM = "SYSTEM"
+    INTERNAL_USER = "INTERNAL_USER"
+    CONTRACTOR_USER = "CONTRACTOR_USER"
+
+
 class ContractorRequest(TimestampMixin, Base):
     __tablename__ = "contractor_requests"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     request_number: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
-    city_id: Mapped[UUID] = mapped_column(
+    city_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("cities.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
-    facility_id: Mapped[UUID] = mapped_column(
+    facility_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("facilities.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     premise_id: Mapped[UUID | None] = mapped_column(
@@ -51,13 +76,17 @@ class ContractorRequest(TimestampMixin, Base):
     contact_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     contact_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    priority: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    desired_completion_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[RequestStatus] = mapped_column(
         Enum(RequestStatus, name="request_status"),
         nullable=False,
-        default=RequestStatus.NEW,
+        default=RequestStatus.DRAFT,
     )
 
-    facility: Mapped[Facility] = relationship()
+    facility: Mapped[Facility | None] = relationship()
     premise: Mapped[Premise | None] = relationship()
     work_types: Mapped[list["RequestWorkType"]] = relationship(
         back_populates="request",
@@ -66,6 +95,11 @@ class ContractorRequest(TimestampMixin, Base):
     assignments: Mapped[list["RequestAssignment"]] = relationship(
         back_populates="request",
         cascade="all, delete-orphan",
+    )
+    history: Mapped[list["RequestHistory"]] = relationship(
+        back_populates="request",
+        cascade="all, delete-orphan",
+        order_by="RequestHistory.created_at",
     )
 
 
@@ -147,3 +181,31 @@ class ContractorUser(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     contractor: Mapped[Contractor] = relationship()
+
+
+class RequestHistory(Base):
+    __tablename__ = "request_history"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    request_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("contractor_requests.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[RequestHistoryEventType] = mapped_column(
+        Enum(RequestHistoryEventType, name="request_history_event_type"),
+        nullable=False,
+    )
+    old_status: Mapped[RequestStatus | None] = mapped_column(Enum(RequestStatus, name="request_status"), nullable=True)
+    new_status: Mapped[RequestStatus | None] = mapped_column(Enum(RequestStatus, name="request_status"), nullable=True)
+    changed_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    actor_type: Mapped[RequestHistoryActorType] = mapped_column(
+        Enum(RequestHistoryActorType, name="request_history_actor_type"),
+        nullable=False,
+    )
+    actor_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+
+    request: Mapped[ContractorRequest] = relationship(back_populates="history")
