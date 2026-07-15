@@ -198,6 +198,58 @@ body {
   white-space: pre-wrap;
 }
 
+.admin-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.admin-nav {
+  position: sticky;
+  top: 88px;
+  overflow: hidden;
+  border: 1px solid #edf0f3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.admin-content {
+  min-width: 0;
+}
+
+.admin-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.admin-metric {
+  margin: 0 0 8px;
+  color: #20242a;
+  font-size: 32px;
+  line-height: 1.1;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.admin-full-width {
+  width: 100%;
+}
+
+.admin-json {
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #edf0f3;
+  border-radius: 8px;
+  background: #f7f8fa;
+  font-size: 12px;
+}
+
 .sp-search-bar {
   width: min(320px, 100%);
 }
@@ -227,7 +279,14 @@ body {
   .sp-dashboard-grid,
   .sp-settings-grid,
   .sp-app-grid,
+  .admin-layout,
+  .admin-card-grid,
+  .admin-form-grid,
   .cr-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .admin-nav {
+    position: static;
   }
 }
