@@ -172,6 +172,32 @@ body {
   gap: 12px;
 }
 
+.cr-collaboration-stack {
+  width: 100%;
+}
+
+.cr-collaboration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cr-comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #667085;
+}
+
+.cr-comment-body {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .sp-search-bar {
   width: min(320px, 100%);
 }

@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
@@ -40,12 +40,32 @@ class RequestHistoryEventType(StrEnum):
     REOPENED = "REOPENED"
     CLOSED = "CLOSED"
     CANCELLED = "CANCELLED"
+    COMMENT_ADDED = "COMMENT_ADDED"
+    COMMENT_UPDATED = "COMMENT_UPDATED"
+    COMMENT_DELETED = "COMMENT_DELETED"
+    ATTACHMENT_ADDED = "ATTACHMENT_ADDED"
+    ATTACHMENT_DELETED = "ATTACHMENT_DELETED"
+    WORK_RESULT_ADDED = "WORK_RESULT_ADDED"
 
 
 class RequestHistoryActorType(StrEnum):
     SYSTEM = "SYSTEM"
     INTERNAL_USER = "INTERNAL_USER"
     CONTRACTOR_USER = "CONTRACTOR_USER"
+
+
+class RequestVisibility(StrEnum):
+    SHARED = "SHARED"
+    INTERNAL = "INTERNAL"
+
+
+class RequestAttachmentCategory(StrEnum):
+    REQUEST_FILE = "REQUEST_FILE"
+    WORK_RESULT = "WORK_RESULT"
+    ACT = "ACT"
+    PHOTO = "PHOTO"
+    DOCUMENT = "DOCUMENT"
+    OTHER = "OTHER"
 
 
 class ContractorRequest(TimestampMixin, Base):
@@ -101,6 +121,8 @@ class ContractorRequest(TimestampMixin, Base):
         cascade="all, delete-orphan",
         order_by="RequestHistory.created_at",
     )
+    comments: Mapped[list["RequestComment"]] = relationship(back_populates="request", cascade="all, delete-orphan")
+    attachments: Mapped[list["RequestAttachment"]] = relationship(back_populates="request", cascade="all, delete-orphan")
 
 
 class RequestWorkType(Base):
@@ -161,6 +183,7 @@ class RequestAssignment(TimestampMixin, Base):
     request: Mapped[ContractorRequest] = relationship(back_populates="assignments")
     contractor: Mapped[Contractor] = relationship()
     work_type: Mapped[WorkType] = relationship()
+    attachments: Mapped[list["RequestAttachment"]] = relationship(back_populates="assignment")
 
 
 class ContractorUser(Base):
@@ -209,3 +232,87 @@ class RequestHistory(Base):
     actor_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
 
     request: Mapped[ContractorRequest] = relationship(back_populates="history")
+
+
+class RequestComment(TimestampMixin, Base):
+    __tablename__ = "request_comments"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    request_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("contractor_requests.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    author_type: Mapped[RequestHistoryActorType] = mapped_column(
+        Enum(RequestHistoryActorType, name="request_history_actor_type"),
+        nullable=False,
+    )
+    author_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    contractor_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("contractors.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    visibility: Mapped[RequestVisibility] = mapped_column(Enum(RequestVisibility, name="request_visibility"), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    is_edited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    request: Mapped[ContractorRequest] = relationship(back_populates="comments")
+    contractor: Mapped[Contractor | None] = relationship()
+    attachments: Mapped[list["RequestAttachment"]] = relationship(back_populates="comment")
+
+
+class RequestAttachment(Base):
+    __tablename__ = "request_attachments"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    request_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("contractor_requests.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    assignment_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("request_assignments.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    comment_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("request_comments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    uploaded_by_type: Mapped[RequestHistoryActorType] = mapped_column(
+        Enum(RequestHistoryActorType, name="request_history_actor_type"),
+        nullable=False,
+    )
+    uploaded_by_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    contractor_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("contractors.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    category: Mapped[RequestAttachmentCategory] = mapped_column(
+        Enum(RequestAttachmentCategory, name="request_attachment_category"),
+        nullable=False,
+    )
+    visibility: Mapped[RequestVisibility] = mapped_column(Enum(RequestVisibility, name="request_visibility"), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    request: Mapped[ContractorRequest] = relationship(back_populates="attachments")
+    assignment: Mapped[RequestAssignment | None] = relationship(back_populates="attachments")
+    comment: Mapped[RequestComment | None] = relationship(back_populates="attachments")
+    contractor: Mapped[Contractor | None] = relationship()

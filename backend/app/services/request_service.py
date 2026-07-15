@@ -7,11 +7,14 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.reference_data import City, ContractorResponsibility, Facility, Premise, WorkType
 from app.models.requests import (
     AssignmentStatus,
     ContractorRequest,
     RequestAssignment,
+    RequestAttachment,
+    RequestAttachmentCategory,
     RequestHistory,
     RequestHistoryActorType,
     RequestHistoryEventType,
@@ -425,6 +428,16 @@ def change_assignment_status(
 ) -> RequestAssignment:
     if new_status not in ASSIGNMENT_STATUS_TRANSITIONS[assignment.status]:
         raise HTTPException(status_code=409, detail=f"Invalid assignment status transition: {assignment.status} -> {new_status}")
+    if new_status == AssignmentStatus.COMPLETED and settings.require_work_result_for_completion:
+        work_result_exists = db.scalar(
+            select(RequestAttachment.id).where(
+                RequestAttachment.assignment_id == assignment.id,
+                RequestAttachment.category == RequestAttachmentCategory.WORK_RESULT,
+                RequestAttachment.is_deleted.is_(False),
+            )
+        )
+        if work_result_exists is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="At least one active work result attachment is required before completion")
 
     request = assignment.request
     old_request_status = request.status
