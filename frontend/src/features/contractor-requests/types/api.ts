@@ -1,7 +1,19 @@
 export type Uuid = string;
 
-export type RequestStatus = 'NEW' | 'ASSIGNED';
+export type RequestStatus = 'DRAFT' | 'NEW' | 'PARTIALLY_ASSIGNED' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CLOSED' | 'CANCELLED';
 export type AssignmentStatus = 'ASSIGNED' | 'ACCEPTED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+export type RequestHistoryEventType =
+  | 'CREATED'
+  | 'UPDATED'
+  | 'PUBLISHED'
+  | 'STATUS_CHANGED'
+  | 'ASSIGNMENT_CREATED'
+  | 'ASSIGNMENT_ACCEPTED'
+  | 'ASSIGNMENT_STATUS_CHANGED'
+  | 'REOPENED'
+  | 'CLOSED'
+  | 'CANCELLED';
+export type RequestHistoryActorType = 'SYSTEM' | 'INTERNAL_USER' | 'CONTRACTOR_USER';
 
 export type City = {
   id: Uuid;
@@ -72,6 +84,10 @@ export type ContractorRequest = {
   contact_name: string | null;
   contact_email: string | null;
   contact_phone: string | null;
+  priority: string | null;
+  desired_completion_date: string | null;
+  completed_at: string | null;
+  closed_at: string | null;
   status: RequestStatus;
   work_type_ids: Uuid[];
   assignments: RequestAssignment[];
@@ -81,18 +97,51 @@ export type ContractorRequest = {
 };
 
 export type CreateContractorRequestPayload = {
-  city_id: Uuid;
-  facility_id: Uuid;
+  city_id?: Uuid | null;
+  facility_id?: Uuid | null;
   premise_id?: Uuid | null;
   title: string;
   description?: string | null;
   contact_name?: string | null;
   contact_email?: string | null;
   contact_phone?: string | null;
+  priority?: string | null;
+  desired_completion_date?: string | null;
   work_type_ids: Uuid[];
+  save_as_draft?: boolean;
 };
 
 export type RequestFormValues = CreateContractorRequestPayload & {
   priority?: string;
   desired_completion_date?: string;
+};
+
+export type RequestHistoryItem = {
+  id: Uuid;
+  event_type: RequestHistoryEventType;
+  old_status: RequestStatus | null;
+  new_status: RequestStatus | null;
+  changed_fields: Record<string, { old: unknown; new: unknown }> | null;
+  comment: string | null;
+  created_at: string;
+  actor_type: RequestHistoryActorType;
+  actor_id: Uuid | null;
+};
+
+export type RequestListParams = {
+  search?: string;
+  status?: RequestStatus;
+  priority?: string;
+  city_id?: Uuid;
+  facility_id?: Uuid;
+  work_type_id?: Uuid;
+  contractor_id?: Uuid;
+  created_from?: string;
+  created_to?: string;
+  due_from?: string;
+  due_to?: string;
+  skip?: number;
+  limit?: number;
+  sort_by?: 'created_at' | 'updated_at' | 'number' | 'status' | 'priority' | 'desired_completion_date';
+  sort_order?: 'asc' | 'desc';
 };

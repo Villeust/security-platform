@@ -6,10 +6,10 @@ type Props = {
 };
 
 export function RequestStatusBadge({ status }: Props) {
-  if (status === 'ASSIGNED' || status === 'ACCEPTED' || status === 'IN_PROGRESS') {
+  if (status === 'ASSIGNED' || status === 'ACCEPTED' || status === 'IN_PROGRESS' || status === 'PARTIALLY_ASSIGNED') {
     return <StatusBadge label={status} tone="processing" />;
   }
-  if (status === 'COMPLETED') {
+  if (status === 'COMPLETED' || status === 'CLOSED') {
     return <StatusBadge label={status} tone="success" />;
   }
   if (status === 'CANCELLED') {
