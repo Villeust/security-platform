@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.admin import AuthSource, UserType
+from app.models.admin import AdminNotificationSeverity, AdminNotificationType, AuthSource, LockReason, UserType
 
 
 class RoleCreate(BaseModel):
@@ -69,6 +69,7 @@ class UserCreate(BaseModel):
     contractor_memberships: list[ContractorMembershipPayload] = Field(default_factory=list)
     is_active: bool = True
     is_locked: bool = False
+    temporary_password: str | None = Field(default=None, max_length=128)
 
     @field_validator("contractor_memberships")
     @classmethod
@@ -121,12 +122,46 @@ class UserResponse(BaseModel):
     is_active: bool
     is_locked: bool
     last_login_at: datetime | None
+    password_changed_at: datetime | None = None
+    must_change_password: bool = False
+    failed_login_attempts: int = 0
+    locked_until: datetime | None = None
+    last_login_ip: str | None = None
+    external_subject: str | None = None
+    external_directory_id: str | None = None
+    authentication_enabled: bool = True
+    password_expires_at: datetime | None = None
+    password_expired_at: datetime | None = None
+    password_expiry_notified_at: datetime | None = None
+    lock_reason: LockReason | None = None
+    locked_at: datetime | None = None
+    locked_by_id: UUID | None = None
+    unlock_reason: str | None = None
     role_ids: list[UUID] = []
     role_codes: list[str] = []
     permissions: list[str] = []
     contractor_memberships: list[ContractorMembershipResponse] = []
     created_at: datetime
     updated_at: datetime
+
+
+class UserCreateResponse(UserResponse):
+    temporary_password: str | None = None
+
+
+class GenerateTemporaryPasswordResponse(BaseModel):
+    user: UserResponse
+    temporary_password: str
+
+
+class UserLockRequest(BaseModel):
+    reason: str = Field(default="ADMINISTRATIVE", max_length=128)
+    comment: str | None = Field(default=None, max_length=500)
+    revoke_sessions: bool = True
+
+
+class UserUnlockRequest(BaseModel):
+    comment: str | None = Field(default=None, max_length=500)
 
 
 class ContractorAdminCreate(BaseModel):
@@ -199,3 +234,21 @@ class AdminAuditLogResponse(BaseModel):
     created_at: datetime
     ip_address: str | None
     user_agent: str | None
+
+
+class AdminNotificationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    type: AdminNotificationType
+    severity: AdminNotificationSeverity
+    user_id: UUID | None
+    title: str
+    message: str
+    details: dict | None
+    created_at: datetime
+    read_at: datetime | None
+    read_by_id: UUID | None
+    is_resolved: bool
+    resolved_at: datetime | None
+    resolved_by_id: UUID | None

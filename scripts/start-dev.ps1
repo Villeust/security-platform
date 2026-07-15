@@ -1,10 +1,11 @@
 param(
-    [switch]$Seed
+    [switch]$Seed,
+    [switch]$ForceRestart
 )
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Root = Resolve-Path (Join-Path $ScriptDir "..")
+$Root = (Resolve-Path (Join-Path $ScriptDir "..")).Path
 $Backend = Join-Path $Root "backend"
 $Frontend = Join-Path $Root "frontend"
 $Runtime = Join-Path $Root ".dev-runtime"
@@ -25,23 +26,108 @@ function Get-PortOwner($Port) {
     Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
 }
 
-function Assert-PortFree($Port) {
-    $Connection = Get-PortOwner $Port
-    if ($Connection) {
-        $OwnerPid = $Connection.OwningProcess
-        $Process = Get-Process -Id $OwnerPid -ErrorAction SilentlyContinue
-        $CimProcess = $null
-        if (-not $Process) {
-            $CimProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $OwnerPid" -ErrorAction SilentlyContinue
-            if (-not $CimProcess) {
-                $StaleTcpMessage = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("0J7QsdC90LDRgNGD0LbQtdC90LAg0LfQsNCy0LjRgdGI0LDRjyDQt9Cw0L/QuNGB0YwgVENQOiDQv9C+0YDRgiDQt9Cw0L3Rj9GCLCDQvdC+INC/0YDQvtGG0LXRgdGBLdCy0LvQsNC00LXQu9C10YYg0L7RgtGB0YPRgtGB0YLQstGD0LXRgi4g0J/QtdGA0LXQt9Cw0LPRgNGD0LfQuNGC0LUgV2luZG93cyDQuNC70Lgg0L7Rh9C40YHRgtC40YLQtSDRgdC10YLQtdCy0L7QuSDRgdGC0LXQui4="))
-                Write-Host $StaleTcpMessage -ForegroundColor Red
-                exit 1
+function Get-ProcessInfo($ProcessId) {
+    $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    $CimProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction SilentlyContinue
+    if (-not $Process -and -not $CimProcess) {
+        return $null
+    }
+    [pscustomobject]@{
+        Pid = $ProcessId
+        Name = if ($Process) { $Process.ProcessName } elseif ($CimProcess) { $CimProcess.Name } else { "unknown" }
+        CommandLine = if ($CimProcess -and $CimProcess.CommandLine) { $CimProcess.CommandLine } else { "" }
+        ParentProcessId = if ($CimProcess) { $CimProcess.ParentProcessId } else { $null }
+    }
+}
+
+function Get-ProcessAncestors($ProcessInfo) {
+    $Ancestors = @()
+    $Seen = @{}
+    $ParentId = $ProcessInfo.ParentProcessId
+    while ($ParentId -and -not $Seen.ContainsKey([string]$ParentId)) {
+        $Seen[[string]$ParentId] = $true
+        $Parent = Get-ProcessInfo $ParentId
+        if (-not $Parent) {
+            break
+        }
+        $Ancestors += $Parent
+        $ParentId = $Parent.ParentProcessId
+    }
+    return $Ancestors
+}
+
+function Test-CurrentProjectProcess($ProcessInfo) {
+    $ProjectPaths = @($Root, $Backend, $Frontend)
+    foreach ($Path in $ProjectPaths) {
+        if ($ProcessInfo.CommandLine -like "*$Path*") {
+            return $true
+        }
+    }
+
+    $Ancestors = Get-ProcessAncestors $ProcessInfo
+    foreach ($Ancestor in $Ancestors) {
+        foreach ($Path in $ProjectPaths) {
+            if ($Ancestor.CommandLine -like "*$Path*") {
+                $Line = "$($ProcessInfo.CommandLine) $($Ancestor.CommandLine)"
+                if ($Line -match "vite|uvicorn|npm|uv|node|python|powershell") {
+                    return $true
+                }
             }
         }
-        $Name = if ($Process) { $Process.ProcessName } elseif ($CimProcess) { $CimProcess.Name } else { "unknown" }
-        Fail "Port $Port is busy. PID: $($Connection.OwningProcess), process: $Name. Stop it manually or run .\stop-dev.cmd if it was started by this project."
     }
+
+    return $false
+}
+
+function Get-ProjectStopPid($ProcessInfo) {
+    $Ancestors = Get-ProcessAncestors $ProcessInfo
+    foreach ($Ancestor in $Ancestors) {
+        if ($Ancestor.CommandLine -like "*$Root*" -and $Ancestor.Name -match "powershell|cmd") {
+            return [int]$Ancestor.Pid
+        }
+    }
+    return [int]$ProcessInfo.Pid
+}
+
+function Write-PortProcessDetails($Port, $ProcessInfo) {
+    Write-Host "Port $Port is busy." -ForegroundColor Yellow
+    Write-Host "PID: $($ProcessInfo.Pid)"
+    Write-Host "Process: $($ProcessInfo.Name)"
+    Write-Host "Command line: $($ProcessInfo.CommandLine)"
+}
+
+function Assert-PortFree($Port) {
+    $Connection = Get-PortOwner $Port
+    if (-not $Connection) {
+        return
+    }
+
+    $OwnerPid = [int]$Connection.OwningProcess
+    $ProcessInfo = Get-ProcessInfo $OwnerPid
+    if (-not $ProcessInfo) {
+        Write-Host "Обнаружена зависшая запись TCP: порт занят, но процесс-владелец отсутствует. Перезагрузите Windows или очистите сетевой стек." -ForegroundColor Red
+        exit 1
+    }
+
+    Write-PortProcessDetails $Port $ProcessInfo
+    $IsProjectProcess = Test-CurrentProjectProcess $ProcessInfo
+
+    if ($IsProjectProcess -and $ForceRestart) {
+        $StopPid = Get-ProjectStopPid $ProcessInfo
+        Write-Host "ForceRestart: stopping current project process on port $Port (PID $StopPid)..."
+        & taskkill.exe /PID $StopPid /T /F | Out-Null
+        Start-Sleep -Seconds 2
+        if (Get-PortOwner $Port) {
+            Fail "Port $Port is still busy after stopping PID $StopPid."
+        }
+        return
+    }
+
+    if ($IsProjectProcess) {
+        Fail "Port $Port is used by this project. To restart it safely, run: powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -ForceRestart"
+    }
+
+    Fail "Port $Port is used by another process. Stop it manually if it is safe, then run .\start-dev.cmd again."
 }
 
 function Run-Step($WorkingDirectory, $Command, $Arguments) {
@@ -77,6 +163,13 @@ Require-Command "npm.cmd" "Install npm with Node.js and ensure npm.cmd is in PAT
 
 Import-DotEnv (Join-Path $Root ".env")
 
+if (-not $env:UV_CACHE_DIR) {
+    $env:UV_CACHE_DIR = Join-Path $Root ".uv-cache"
+}
+if (-not $env:UV_PROJECT_ENVIRONMENT) {
+    $env:UV_PROJECT_ENVIRONMENT = Join-Path $Backend ".venv"
+}
+
 Assert-PortFree 3000
 Assert-PortFree 8000
 
@@ -104,7 +197,7 @@ if ($Seed) {
     Run-Step $Backend "uv" @("run", "python", "-m", "app.scripts.seed_demo")
 }
 
-$BackendArgs = @("-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "cd '$Backend'; uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000")
+$BackendArgs = @("-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "`$env:UV_CACHE_DIR='$($env:UV_CACHE_DIR)'; `$env:UV_PROJECT_ENVIRONMENT='$($env:UV_PROJECT_ENVIRONMENT)'; cd '$Backend'; uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000")
 $FrontendArgs = @("-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "cd '$Frontend'; npm.cmd run dev -- --host 127.0.0.1 --port 3000 --strictPort")
 
 $BackendProcess = Start-Process -FilePath "powershell.exe" -ArgumentList $BackendArgs -WindowStyle Hidden -PassThru

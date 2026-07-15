@@ -1,6 +1,7 @@
 import {
   AppstoreOutlined,
   DashboardOutlined,
+  LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   SafetyCertificateOutlined,
@@ -13,18 +14,16 @@ import type { PropsWithChildren } from 'react';
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { PlatformLogo } from '../components/branding';
 import { Button, StatusBadge } from '../components/design-system';
-import { useAuth } from '../context/AuthContext';
-import { useAppTheme } from '../context/ThemeContext';
+import { DEV_USER_SELECTOR_ENABLED, useAuth } from '../context/AuthContext';
 
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: 'Dashboard', permissions: [] },
   { key: '/applications', icon: <AppstoreOutlined />, label: 'Applications', permissions: ['requests.view'] },
-  { key: '/admin', icon: <SafetyCertificateOutlined />, label: 'Администрирование', permissions: ['admin.dashboard.view', 'admin.contractors.view', 'admin.users.view', 'admin.roles.view', 'admin.audit.view', 'admin.system_status.view', 'reference_data.manage'] },
+  { key: '/admin', icon: <SafetyCertificateOutlined />, label: 'Администрирование', permissions: ['admin.dashboard.view', 'admin.contractors.view', 'admin.users.view', 'admin.roles.view', 'admin.audit.view', 'admin.system_status.view', 'admin.connections.view', 'admin.notifications.view'] },
   { key: '/settings', icon: <SettingOutlined />, label: 'Settings', permissions: [] },
 ];
-
-const devUserSelectorEnabled = import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEV_USER_SELECTOR === 'true';
 
 function initials(name?: string) {
   return (name ?? 'SP')
@@ -39,21 +38,22 @@ export function AppLayout({ children }: PropsWithChildren) {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { appName } = useAppTheme();
   const auth = useAuth();
   const visibleMenuItems = menuItems.filter((item) => item.permissions.length === 0 || auth.hasAnyPermission(item.permissions));
   const selectedKey = visibleMenuItems.find((item) => location.pathname === item.key || (item.key !== '/' && location.pathname.startsWith(item.key)))?.key ?? '/';
   const currentUser = auth.currentUser;
-  const primaryRole = currentUser?.role_codes[0] ?? 'Нет роли';
-  const secondaryIdentity = currentUser?.username ?? currentUser?.email ?? 'Пользователь не выбран';
+  const primaryRole = currentUser?.role_codes[0] ?? 'Без роли';
+  const secondaryIdentity = currentUser?.email ?? currentUser?.username ?? 'Пользователь не выбран';
+
   const profileItems: MenuProps['items'] = [
-    { key: 'profile', icon: <UserOutlined />, label: 'Профиль' },
-    { key: 'roles', icon: <SafetyCertificateOutlined />, label: `Роли и права: ${currentUser?.permissions.length ?? 0} permissions` },
+    { key: 'profile', icon: <UserOutlined />, label: 'Профиль', disabled: true },
+    { key: 'roles', icon: <SafetyCertificateOutlined />, label: `Роли и права: ${currentUser?.permissions.length ?? 0}`, disabled: true },
+    ...(DEV_USER_SELECTOR_ENABLED ? [{ type: 'divider' as const }, { key: 'developer-tools', icon: <ToolOutlined />, label: 'Developer Tools', disabled: true }] : []),
     { type: 'divider' },
-    ...(devUserSelectorEnabled ? [{ key: 'developer-tools', icon: <ToolOutlined />, label: 'Developer Tools' }] : []),
-    { key: 'logout', label: 'Выйти', disabled: true },
+    { key: 'logout', icon: <LogoutOutlined />, label: 'Выйти' },
   ];
-  const developerTools = devUserSelectorEnabled ? (
+
+  const developerTools = DEV_USER_SELECTOR_ENABLED ? (
     <div className="sp-dev-tools-panel">
       <Typography.Text strong>Тестовый пользователь</Typography.Text>
       <Select
@@ -64,42 +64,25 @@ export function AppLayout({ children }: PropsWithChildren) {
         onChange={auth.setDevUserId}
         options={auth.devUsers.map((user) => ({ value: user.id, label: `${user.display_name} (${user.username})` }))}
       />
-      <Typography.Text type="secondary">Роли и permissions загружаются из backend seed.</Typography.Text>
+      <Typography.Text type="secondary">Пользователь выбирается из seed-данных; роли и permissions загружаются из backend.</Typography.Text>
     </div>
   ) : null;
 
   return (
     <Layout className="sp-shell">
-      <Layout.Sider
-        breakpoint="lg"
-        collapsedWidth="0"
-        collapsed={collapsed}
-        onBreakpoint={setCollapsed}
-        className="sp-sidebar"
-      >
+      <Layout.Sider breakpoint="lg" collapsedWidth={72} collapsed={collapsed} onBreakpoint={setCollapsed} className={`sp-sidebar ${collapsed ? 'sp-sidebar-collapsed' : ''}`}>
         <div className="sp-brand">
-          <span className="sp-brand-mark">SP</span>
-          <span className="sp-brand-name">{appName}</span>
+          <PlatformLogo variant={collapsed ? 'compact' : 'header'} className="sp-brand-logo" />
         </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[selectedKey]}
-          items={visibleMenuItems}
-          onClick={({ key }) => navigate(key)}
-          className="sp-menu"
-        />
+        <Menu theme="dark" mode="inline" selectedKeys={[selectedKey]} items={visibleMenuItems} onClick={({ key }) => navigate(key)} className="sp-menu" />
       </Layout.Sider>
       <Layout>
         <Layout.Header className="sp-header">
-          <Button
-            type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-            aria-label="Toggle navigation"
-          />
+          <Button type="text" icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setCollapsed(!collapsed)} aria-label="Toggle navigation" />
           <div className="sp-header-meta">
-            <Typography.Text strong>{appName}</Typography.Text>
+            <span className="sp-header-brand">
+              <PlatformLogo variant="header" className="sp-header-logo" />
+            </span>
             {import.meta.env.DEV ? <StatusBadge label="DEV" tone="processing" /> : null}
             {developerTools ? (
               <Tooltip title="Доступно только в среде разработки для проверки ролей и прав">
@@ -108,7 +91,18 @@ export function AppLayout({ children }: PropsWithChildren) {
                 </Popover>
               </Tooltip>
             ) : null}
-            <Dropdown menu={{ items: profileItems }} trigger={['click']} placement="bottomRight">
+            <Dropdown
+              menu={{
+                items: profileItems,
+                onClick: ({ key }) => {
+                  if (key === 'logout') {
+                    void auth.logout().then(() => navigate('/login', { replace: true }));
+                  }
+                },
+              }}
+              trigger={['click']}
+              placement="bottomRight"
+            >
               <button type="button" className="sp-profile-button">
                 <Avatar className="sp-profile-avatar">{initials(currentUser?.display_name)}</Avatar>
                 <span className="sp-profile-copy">

@@ -157,6 +157,7 @@ flowchart LR
 | Сценарий | Команда |
 | --- | --- |
 | Обычный запуск | `.\start-dev.cmd` |
+| Принудительный перезапуск только процессов этого проекта | `powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -ForceRestart` |
 | Запуск с demo seed | `powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -Seed` |
 | Остановка | `.\stop-dev.cmd` |
 

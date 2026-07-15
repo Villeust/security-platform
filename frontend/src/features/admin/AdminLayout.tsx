@@ -1,6 +1,8 @@
 import {
+  ApiOutlined,
   AuditOutlined,
   BankOutlined,
+  BellOutlined,
   BuildOutlined,
   DashboardOutlined,
   DeploymentUnitOutlined,
@@ -27,6 +29,8 @@ const adminItems = [
   { key: '/admin/responsibilities', icon: <DeploymentUnitOutlined />, label: 'Зоны ответственности', permission: 'reference_data.manage' },
   { key: '/admin/work-types', icon: <ToolOutlined />, label: 'Направления работ', permission: 'reference_data.manage' },
   { key: '/admin/roles', icon: <TeamOutlined />, label: 'Роли', permission: 'admin.roles.view' },
+  { key: '/admin/notifications', icon: <BellOutlined />, label: 'Уведомления', permission: 'admin.notifications.view' },
+  { key: '/admin/connections', icon: <ApiOutlined />, label: 'Подключения', permission: 'admin.connections.view' },
   { key: '/admin/audit', icon: <AuditOutlined />, label: 'Журнал действий', permission: 'admin.audit.view' },
   { key: '/admin/system-status', icon: <SafetyCertificateOutlined />, label: 'Состояние сервисов', permission: 'admin.system_status.view' },
 ];
