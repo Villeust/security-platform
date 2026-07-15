@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.admin import AuthSource, ContractorMembership, Role, User, UserRole, UserType
+from app.models.admin import AuthSource, ContractorMembership, Role, RolePermission, User, UserRole, UserType
 from app.models.reference_data import City, Contractor, ContractorResponsibility, Facility, Premise, WorkType
 from app.models.requests import ContractorRequest, RequestStatus
 from app.schemas.admin import (
@@ -136,7 +136,10 @@ def list_users(
     skip: int,
     limit: int,
 ) -> list[User]:
-    query = select(User).options(selectinload(User.roles).selectinload(UserRole.role), selectinload(User.contractor_memberships))
+    query = select(User).options(
+        selectinload(User.roles).selectinload(UserRole.role).selectinload(Role.permissions).selectinload(RolePermission.permission),
+        selectinload(User.contractor_memberships),
+    )
     if role_id is not None:
         query = query.join(UserRole).where(UserRole.role_id == role_id)
     if contractor_id is not None:
@@ -249,7 +252,7 @@ def set_user_contractors(db: Session, user_id: UUID, payload: UserContractorsUpd
 
 def list_roles(db: Session, search: str | None, is_active: bool | None, skip: int, limit: int) -> list[Role]:
     ensure_seed_roles(db)
-    query = select(Role).options(selectinload(Role.users))
+    query = select(Role).options(selectinload(Role.users), selectinload(Role.permissions))
     if search:
         pattern = f"%{search}%"
         query = query.where(or_(Role.code.ilike(pattern), Role.name.ilike(pattern)))

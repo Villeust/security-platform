@@ -51,6 +51,20 @@ export type Role = {
   name: string;
   description: string | null;
   users_count: number;
+  permissions_count: number;
+  is_system: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Permission = {
+  id: Uuid;
+  code: string;
+  name: string;
+  description: string | null;
+  resource: string;
+  action: string;
   is_system: boolean;
   is_active: boolean;
   created_at: string;
@@ -79,6 +93,7 @@ export type AdminUser = {
   last_login_at: string | null;
   role_ids: Uuid[];
   role_codes: string[];
+  permissions: string[];
   contractor_memberships: ContractorMembership[];
   created_at: string;
   updated_at: string;

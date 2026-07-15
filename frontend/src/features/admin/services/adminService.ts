@@ -1,5 +1,15 @@
 import { api } from '../../../services/api';
-import type { AdminContractor, AdminDashboard, AdminListParams, AdminUser, AuditLog, Role, SystemStatus, Uuid } from '../types';
+import type { AdminContractor, AdminDashboard, AdminListParams, AdminUser, AuditLog, Permission, Role, SystemStatus, Uuid } from '../types';
+
+export async function getCurrentUser() {
+  const response = await api.get<AdminUser>('/api/v1/admin/me');
+  return response.data;
+}
+
+export async function getDevUsers() {
+  const response = await api.get<AdminUser[]>('/api/v1/admin/dev-users');
+  return response.data;
+}
 
 export async function getAdminDashboard() {
   const response = await api.get<AdminDashboard>('/api/v1/admin/dashboard');
@@ -65,6 +75,21 @@ export async function setUserContractors(id: Uuid, contractorIds: Uuid[]) {
 
 export async function getRoles(params: AdminListParams = {}) {
   const response = await api.get<Role[]>('/api/v1/admin/roles', { params: { limit: 100, ...params } });
+  return response.data;
+}
+
+export async function getPermissions() {
+  const response = await api.get<Permission[]>('/api/v1/admin/permissions');
+  return response.data;
+}
+
+export async function getRolePermissions(roleId: Uuid) {
+  const response = await api.get<Permission[]>(`/api/v1/admin/roles/${roleId}/permissions`);
+  return response.data;
+}
+
+export async function setRolePermissions(roleId: Uuid, permissionIds: Uuid[]) {
+  const response = await api.put<Permission[]>(`/api/v1/admin/roles/${roleId}/permissions`, { permission_ids: permissionIds });
   return response.data;
 }
 

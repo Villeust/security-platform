@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { Button, Card, ErrorState, Loader, PageHeader, Section, Table } from '../../components/design-system';
+import { useAuth } from '../../context/AuthContext';
 import { AssignmentWorkResults } from './components/AssignmentWorkResults';
 import { RequestAttachments } from './components/RequestAttachments';
 import { RequestComments } from './components/RequestComments';
@@ -41,6 +42,7 @@ const statusActions: Partial<Record<RequestStatus, Array<{ status: RequestStatus
 export function ContractorRequestDetailPage() {
   const { requestId } = useParams();
   const navigate = useNavigate();
+  const auth = useAuth();
   const referenceData = useReferenceData();
   const [request, setRequest] = useState<ContractorRequest | null>(null);
   const [history, setHistory] = useState<RequestHistoryItem[]>([]);
@@ -145,16 +147,16 @@ export function ContractorRequestDetailPage() {
             <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/applications/contractor-requests')}>
               Назад
             </Button>
-            {request.status === 'DRAFT' && (
+            {request.status === 'DRAFT' && auth.hasPermission('requests.publish') && (
               <Button type="primary" icon={<SendOutlined />} onClick={publish}>
                 Опубликовать
               </Button>
             )}
-            {actions.map((action) => (
+            {auth.hasPermission('requests.change_status') ? actions.filter((action) => action.status !== 'CLOSED' || auth.hasPermission('requests.close')).map((action) => (
               <Button key={action.status} icon={action.icon} onClick={() => changeStatus(action.status)} danger={action.status === 'CANCELLED'}>
                 {action.label}
               </Button>
-            ))}
+            )) : null}
           </Space>
         }
       />
@@ -207,12 +209,12 @@ export function ContractorRequestDetailPage() {
           {
             key: 'comments',
             label: 'Комментарии',
-            children: <RequestComments requestId={request.id} mode="internal" />,
+            children: auth.hasPermission('requests.comments.internal') ? <RequestComments requestId={request.id} mode="internal" /> : <ErrorState title="Комментарии недоступны" description="Недостаточно прав для внутренних комментариев." />,
           },
           {
             key: 'attachments',
             label: 'Вложения',
-            children: <RequestAttachments requestId={request.id} mode="internal" />,
+            children: auth.hasPermission('requests.attachments.internal') ? <RequestAttachments requestId={request.id} mode="internal" /> : <ErrorState title="Вложения недоступны" description="Недостаточно прав для внутренних вложений." />,
           },
           {
             key: 'history',

@@ -29,8 +29,28 @@ class RoleResponse(BaseModel):
     is_system: bool
     is_active: bool
     users_count: int = 0
+    permissions_count: int = 0
     created_at: datetime
     updated_at: datetime
+
+
+class PermissionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    code: str
+    name: str
+    description: str | None
+    resource: str
+    action: str
+    is_system: bool
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class RolePermissionsUpdate(BaseModel):
+    permission_ids: list[UUID] = Field(default_factory=list)
 
 
 class ContractorMembershipPayload(BaseModel):
@@ -103,6 +123,7 @@ class UserResponse(BaseModel):
     last_login_at: datetime | None
     role_ids: list[UUID] = []
     role_codes: list[str] = []
+    permissions: list[str] = []
     contractor_memberships: list[ContractorMembershipResponse] = []
     created_at: datetime
     updated_at: datetime

@@ -49,6 +49,7 @@ class Role(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     users: Mapped[list["UserRole"]] = relationship(back_populates="role", cascade="all, delete-orphan")
+    permissions: Mapped[list["RolePermission"]] = relationship(back_populates="role", cascade="all, delete-orphan")
 
 
 class UserRole(Base):
@@ -60,6 +61,32 @@ class UserRole(Base):
 
     user: Mapped[User] = relationship(back_populates="roles")
     role: Mapped[Role] = relationship(back_populates="users")
+
+
+class Permission(TimestampMixin, Base):
+    __tablename__ = "permissions"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    code: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resource: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    roles: Mapped[list["RolePermission"]] = relationship(back_populates="permission", cascade="all, delete-orphan")
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    __table_args__ = (UniqueConstraint("role_id", "permission_id", name="uq_role_permission"),)
+
+    role_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
+    permission_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("permissions.id", ondelete="RESTRICT"), primary_key=True)
+
+    role: Mapped[Role] = relationship(back_populates="permissions")
+    permission: Mapped[Permission] = relationship(back_populates="roles")
 
 
 class ContractorMembership(TimestampMixin, Base):
