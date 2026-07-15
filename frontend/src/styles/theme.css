@@ -122,10 +122,54 @@ body {
 }
 
 .sp-dashboard-grid,
-.sp-settings-grid {
+.sp-settings-grid,
+.sp-app-grid,
+.cr-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.sp-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sp-card-text {
+  margin-top: 0;
+  color: #667085;
+}
+
+.cr-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.cr-filter {
+  min-width: 180px;
+}
+
+.cr-api-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #667085;
+}
+
+.cr-form {
+  max-width: 920px;
+}
+
+.cr-date-picker {
+  width: 100%;
+}
+
+.cr-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .sp-search-bar {
@@ -155,7 +199,9 @@ body {
   }
 
   .sp-dashboard-grid,
-  .sp-settings-grid {
+  .sp-settings-grid,
+  .sp-app-grid,
+  .cr-form-grid {
     grid-template-columns: 1fr;
   }
 }

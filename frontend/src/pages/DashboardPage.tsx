@@ -33,8 +33,18 @@ export function DashboardPage() {
   useEffect(() => {
     api
       .get('/api/v1/health')
-      .then(() => setBackendStatus('online'))
-      .catch(() => setBackendStatus('offline'));
+      .then((response) => {
+        if (response.status >= 200 && response.status < 300 && response.data?.status === 'ok') {
+          setBackendStatus('online');
+          return;
+        }
+        console.error('Unexpected health response', response.status, response.data);
+        setBackendStatus('offline');
+      })
+      .catch((error: unknown) => {
+        console.error('Backend health check failed', error);
+        setBackendStatus('offline');
+      });
   }, []);
 
   return (

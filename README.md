@@ -24,6 +24,41 @@ Swagger: http://localhost:8000/docs
 
 Health: http://localhost:8000/api/v1/health
 
+## Local Development
+
+Ports `3000` and `8000` must be free. The scripts do not stop processes that they did not start.
+
+Start:
+
+```powershell
+.\start-dev.cmd
+```
+
+Start with demo seed:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -Seed
+```
+
+Stop:
+
+```powershell
+.\stop-dev.cmd
+```
+
+URLs:
+
+- Frontend: http://127.0.0.1:3000
+- Backend: http://127.0.0.1:8000
+- Swagger: http://127.0.0.1:8000/docs
+
+Find a process that occupies a port:
+
+```powershell
+Get-NetTCPConnection -LocalPort 3000,8000 -State Listen | Select-Object LocalPort,OwningProcess
+Get-Process -Id <PID>
+```
+
 ## Backend tests
 
 ```bash
