@@ -10,11 +10,12 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.api.deps import get_current_user_stub, require_permission
 from app.db.session import get_db
-from app.models.admin import AdminAuditLog, AuthSource, Permission, Role, User, UserType
-from app.models.reference_data import City, Contractor, ContractorResponsibility, Facility, Premise, WorkType
+from app.models.admin import AdminAuditLog, AdminNotification, AdminNotificationSeverity, AdminNotificationType, AuthSource, LockReason, Permission, Role, User, UserType
+from app.models.reference_data import City, Contractor, ContractorResponsibility, Facility, Premise, WorkType, utc_now
 from app.schemas.admin import (
     AdminAuditLogResponse,
     AdminDashboardResponse,
+    AdminNotificationResponse,
     AdminSystemStatusItem,
     AdminSystemStatusResponse,
     ContractorAdminCreate,
@@ -27,6 +28,9 @@ from app.schemas.admin import (
     RoleUpdate,
     UserContractorsUpdate,
     UserCreate,
+    UserCreateResponse,
+    UserLockRequest,
+    UserUnlockRequest,
     UserResponse,
     UserRolesUpdate,
     UserUpdate,
@@ -70,6 +74,9 @@ from app.services.admin_service import (
     update_user,
 )
 from app.services.audit_service import write_audit
+from app.services.auth_service import revoke_all_sessions, set_temporary_password
+from app.services.notification_service import create_notification, list_notifications, mark_read, resolve_notification
+from app.services.password_service import generate_temporary_password
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -91,6 +98,21 @@ def serialize_user(user: User) -> UserResponse:
         is_active=user.is_active,
         is_locked=user.is_locked,
         last_login_at=user.last_login_at,
+        password_changed_at=user.password_changed_at,
+        must_change_password=user.must_change_password,
+        failed_login_attempts=user.failed_login_attempts,
+        locked_until=user.locked_until,
+        last_login_ip=user.last_login_ip,
+        external_subject=user.external_subject,
+        external_directory_id=user.external_directory_id,
+        authentication_enabled=user.authentication_enabled,
+        password_expires_at=user.password_expires_at,
+        password_expired_at=user.password_expired_at,
+        password_expiry_notified_at=user.password_expiry_notified_at,
+        lock_reason=user.lock_reason,
+        locked_at=user.locked_at,
+        locked_by_id=user.locked_by_id,
+        unlock_reason=user.unlock_reason,
         role_ids=[item.role_id for item in user.roles],
         role_codes=[item.role.code for item in user.roles if item.role is not None],
         permissions=sorted(permission_codes_for_user(user)),
@@ -237,10 +259,17 @@ def admin_list_users(
     return [serialize_user(item) for item in list_users(db, search, user_type, role_id, contractor_id, is_active, is_locked, skip, limit)]
 
 
-@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Create admin user")
-def admin_create_user(payload: UserCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.users.manage"))) -> UserResponse:
+@router.post("/users", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED, summary="Create admin user")
+def admin_create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User = Depends(require_permission("admin.users.manage"))) -> UserCreateResponse:
     ensure_seed_roles(db)
-    return serialize_user(create_user(db, payload))
+    user = create_user(db, payload)
+    temporary_password = None
+    if user.auth_source == AuthSource.LOCAL:
+        temporary_password = payload.temporary_password or generate_temporary_password()
+        set_temporary_password(db, user, temporary_password, actor_id=actor.id)
+        db.commit()
+        user = get_or_404(db, User, user.id)
+    return UserCreateResponse(**serialize_user(user).model_dump(), temporary_password=temporary_password)
 
 
 @router.get("/users/{item_id}", response_model=UserResponse, summary="Get admin user")
@@ -261,6 +290,57 @@ def admin_deactivate_user(item_id: UUID, db: Session = Depends(get_db), _: User 
 @router.post("/users/{item_id}/activate", response_model=UserResponse, summary="Activate admin user")
 def admin_activate_user(item_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("admin.users.manage"))) -> UserResponse:
     return serialize_user(set_user_active(db, item_id, True))
+
+
+@router.post("/users/{item_id}/lock", response_model=UserResponse, summary="Lock user")
+def admin_lock_user(item_id: UUID, payload: UserLockRequest, db: Session = Depends(get_db), actor: User = Depends(require_permission("admin.users.security.manage"))) -> UserResponse:
+    if actor.id == item_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot lock yourself")
+    user = get_or_404(db, User, item_id)
+    user.is_locked = True
+    user.lock_reason = LockReason.ADMINISTRATIVE
+    user.locked_at = utc_now()
+    user.locked_by_id = actor.id
+    if payload.revoke_sessions:
+        revoke_all_sessions(db, user.id, "locked_by_admin")
+    write_audit(db, "USER_ACCOUNT_LOCKED_BY_ADMIN", "User", user.id, actor_id=actor.id, new_data={"reason": payload.reason, "comment": payload.comment})
+    create_notification(
+        db,
+        AdminNotificationType.USER_ACCOUNT_LOCKED,
+        AdminNotificationSeverity.HIGH,
+        "Учётная запись заблокирована",
+        f"Пользователь {user.username} заблокирован администратором.",
+        user_id=user.id,
+        details={"actor_id": str(actor.id), "comment": payload.comment},
+    )
+    db.commit()
+    db.refresh(user)
+    return serialize_user(user)
+
+
+@router.post("/users/{item_id}/unlock", response_model=UserResponse, summary="Unlock user")
+def admin_unlock_user(item_id: UUID, payload: UserUnlockRequest, db: Session = Depends(get_db), actor: User = Depends(require_permission("admin.users.security.manage"))) -> UserResponse:
+    user = get_or_404(db, User, item_id)
+    user.is_locked = False
+    user.locked_until = None
+    user.lock_reason = None
+    user.failed_login_attempts = 0
+    user.unlock_reason = payload.comment
+    write_audit(db, "USER_ACCOUNT_UNLOCKED", "User", user.id, actor_id=actor.id, new_data={"comment": payload.comment})
+    create_notification(db, AdminNotificationType.USER_ACCOUNT_UNLOCKED, AdminNotificationSeverity.INFO, "Учётная запись разблокирована", f"Пользователь {user.username} разблокирован.", user_id=user.id)
+    db.commit()
+    db.refresh(user)
+    return serialize_user(user)
+
+
+@router.post("/users/{item_id}/generate-temporary-password", response_model=UserCreateResponse, summary="Generate temporary password")
+def admin_generate_temporary_password(item_id: UUID, db: Session = Depends(get_db), actor: User = Depends(require_permission("admin.users.credentials.manage"))) -> UserCreateResponse:
+    user = get_or_404(db, User, item_id)
+    temporary_password = generate_temporary_password()
+    set_temporary_password(db, user, temporary_password, actor_id=actor.id)
+    db.commit()
+    db.refresh(user)
+    return UserCreateResponse(**serialize_user(user).model_dump(), temporary_password=temporary_password)
 
 
 @router.put("/users/{item_id}/roles", response_model=UserResponse, summary="Set user roles")
@@ -347,6 +427,45 @@ def admin_list_audit(
     if created_to is not None:
         query = query.where(AdminAuditLog.created_at <= created_to)
     return list(db.scalars(query.order_by(AdminAuditLog.created_at.desc()).offset(skip).limit(limit)).all())
+
+
+@router.get("/notifications", response_model=list[AdminNotificationResponse], summary="List admin notifications")
+def admin_list_notifications(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("admin.notifications.view")),
+    type: AdminNotificationType | None = None,
+    severity: AdminNotificationSeverity | None = None,
+    is_read: bool | None = None,
+    is_resolved: bool | None = None,
+    user_id: UUID | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
+) -> list[AdminNotification]:
+    return list_notifications(db, type, severity, is_read, is_resolved, user_id, created_from, created_to, skip, limit)
+
+
+@router.get("/notifications/unread-count", summary="Get unread notifications count")
+def admin_unread_notifications_count(db: Session = Depends(get_db), _: User = Depends(require_permission("admin.notifications.view"))) -> dict[str, int]:
+    count = len(list_notifications(db, is_read=False, is_resolved=False, limit=1000))
+    return {"count": count}
+
+
+@router.post("/notifications/{notification_id}/read", response_model=AdminNotificationResponse)
+def admin_mark_notification_read(notification_id: UUID, db: Session = Depends(get_db), actor: User = Depends(require_permission("admin.notifications.view"))) -> AdminNotification:
+    notification = db.get(AdminNotification, notification_id)
+    if notification is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    return mark_read(db, notification, actor.id)
+
+
+@router.post("/notifications/{notification_id}/resolve", response_model=AdminNotificationResponse)
+def admin_resolve_notification(notification_id: UUID, db: Session = Depends(get_db), actor: User = Depends(require_permission("admin.notifications.manage"))) -> AdminNotification:
+    notification = db.get(AdminNotification, notification_id)
+    if notification is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    return resolve_notification(db, notification, actor.id)
 
 
 def admin_create_reference(db: Session, model: type[Any], payload: Any, action: str, entity_type: str) -> Any:

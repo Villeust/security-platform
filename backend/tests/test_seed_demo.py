@@ -7,6 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
 from app.db.base import Base
+from app.models.admin import User
 from app.models.reference_data import City, Contractor, ContractorResponsibility, Facility, Premise, WorkType
 from app.models.requests import ContractorRequest
 from app.scripts.seed_demo import (
@@ -60,6 +61,42 @@ def test_seed_is_idempotent(db_session: Session) -> None:
 
     assert second_counts == first_counts
     assert second_counts["requests"] == 4
+
+
+def test_seed_demo_users_password_state(db_session: Session) -> None:
+    run_seed(db_session)
+
+    platform_admin = db_session.scalar(select(User).where(User.username == "dev.platform.admin"))
+    temp_user = db_session.scalar(select(User).where(User.username == "dev.temp.user"))
+
+    assert platform_admin is not None
+    assert platform_admin.must_change_password is False
+    assert platform_admin.password_hash is not None
+    assert platform_admin.password_changed_at is not None
+    assert platform_admin.password_expires_at is not None
+
+    assert temp_user is not None
+    assert temp_user.must_change_password is True
+    assert temp_user.password_hash is not None
+
+
+def test_seed_does_not_reset_existing_password_state(db_session: Session) -> None:
+    run_seed(db_session)
+    platform_admin = db_session.scalar(select(User).where(User.username == "dev.platform.admin"))
+    assert platform_admin is not None
+    original_hash = platform_admin.password_hash
+    original_changed_at = platform_admin.password_changed_at
+    original_expires_at = platform_admin.password_expires_at
+    platform_admin.must_change_password = False
+    db_session.commit()
+
+    run_seed(db_session)
+    db_session.refresh(platform_admin)
+
+    assert platform_admin.password_hash == original_hash
+    assert platform_admin.password_changed_at == original_changed_at
+    assert platform_admin.password_expires_at == original_expires_at
+    assert platform_admin.must_change_password is False
 
 
 def test_seed_creates_all_four_demo_scenarios(db_session: Session) -> None:

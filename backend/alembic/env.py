@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 import app.models.reference_data  # noqa: F401
 import app.models.requests  # noqa: F401
+import app.models.workflow  # noqa: F401
 from app.core.config import settings
 from app.db.base import Base
 

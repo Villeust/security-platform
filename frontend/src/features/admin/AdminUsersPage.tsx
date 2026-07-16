@@ -1,19 +1,10 @@
-import { EditOutlined, PlusOutlined, PoweroffOutlined } from '@ant-design/icons';
-import { Form, Input, Modal, Popconfirm, Select, Space, message } from 'antd';
+import { EditOutlined, KeyOutlined, LockOutlined, PlusOutlined, PoweroffOutlined, UnlockOutlined } from '@ant-design/icons';
+import { Alert, Form, Input, Modal, Popconfirm, Select, Space, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button, ErrorState, Loader, PageHeader, Section, StatusBadge, Table } from '../../components/design-system';
-import {
-  createUser,
-  getContractors,
-  getRoles,
-  getUsers,
-  setUserActive,
-  setUserContractors,
-  setUserRoles,
-  updateUser,
-} from './services/adminService';
+import { createUser, generateTemporaryPassword, getContractors, getRoles, getUsers, setUserActive, setUserContractors, setUserLocked, setUserRoles, updateUser } from './services/adminService';
 import type { AdminContractor, AdminUser, AuthSource, Role, UserType, Uuid } from './types';
 
 type UserFormValues = {
@@ -38,6 +29,7 @@ export function AdminUsersPage() {
   const [filters, setFilters] = useState<Record<string, string | boolean | undefined>>({});
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
 
   const contractorNameById = useMemo(() => new Map(contractors.map((item) => [item.id, item.name])), [contractors]);
 
@@ -57,6 +49,7 @@ export function AdminUsersPage() {
 
   const openModal = (item?: AdminUser) => {
     setEditing(item ?? null);
+    setTemporaryPassword(null);
     form.setFieldsValue(
       item
         ? {
@@ -89,9 +82,9 @@ export function AdminUsersPage() {
         });
         await setUserRoles(editing.id, values.role_ids);
         await setUserContractors(editing.id, values.contractor_ids);
-        message.success('Пользователь обновлен');
+        message.success('Пользователь обновлён');
       } else {
-        await createUser({
+        const created = await createUser({
           username: values.username,
           display_name: values.display_name,
           email: values.email || null,
@@ -101,9 +94,12 @@ export function AdminUsersPage() {
           role_ids: values.role_ids,
           contractor_memberships: values.contractor_ids.map((contractor_id, index) => ({ contractor_id, is_primary: index === 0, is_active: true })),
         });
+        setTemporaryPassword(created.temporary_password);
         message.success('Пользователь создан');
       }
-      setModalOpen(false);
+      if (editing) {
+        setModalOpen(false);
+      }
       load();
     } catch {
       message.error('Не удалось сохранить пользователя');
@@ -113,26 +109,29 @@ export function AdminUsersPage() {
   };
 
   const columns: ColumnsType<AdminUser> = [
-    { title: 'Статус', dataIndex: 'is_active', key: 'is_active', render: (value: boolean) => <StatusBadge label={value ? 'Активен' : 'Отключен'} tone={value ? 'success' : 'default'} /> },
+    { title: 'Статус', dataIndex: 'is_active', key: 'is_active', render: (value: boolean) => <StatusBadge label={value ? 'Активен' : 'Отключён'} tone={value ? 'success' : 'default'} /> },
     { title: 'Username', dataIndex: 'username', key: 'username' },
     { title: 'Имя', dataIndex: 'display_name', key: 'display_name' },
     { title: 'Email', dataIndex: 'email', key: 'email', render: (value: string | null) => value ?? '—' },
     { title: 'Тип', dataIndex: 'user_type', key: 'user_type' },
-    { title: 'Источник', dataIndex: 'auth_source', key: 'auth_source' },
-    {
-      title: 'Компания',
-      key: 'contractors',
-      render: (_, item) => item.contractor_memberships.map((membership) => contractorNameById.get(membership.contractor_id) ?? membership.contractor_id).join(', ') || '—',
-    },
+    { title: 'Auth', dataIndex: 'auth_source', key: 'auth_source' },
+    { title: 'Компания', key: 'contractors', render: (_, item) => item.contractor_memberships.map((membership) => contractorNameById.get(membership.contractor_id) ?? membership.contractor_id).join(', ') || '—' },
     { title: 'Роли', dataIndex: 'role_codes', key: 'role_codes', render: (value: string[]) => value.join(', ') || '—' },
-    { title: 'Последняя активность', dataIndex: 'last_login_at', key: 'last_login_at', render: (value: string | null) => (value ? new Date(value).toLocaleString('ru-RU') : '—') },
-    { title: 'Состояние', dataIndex: 'is_locked', key: 'is_locked', render: (value: boolean) => <StatusBadge label={value ? 'Заблокирован' : 'Обычное'} tone={value ? 'error' : 'success'} /> },
+    { title: 'Последний вход', dataIndex: 'last_login_at', key: 'last_login_at', render: (value: string | null) => (value ? new Date(value).toLocaleString('ru-RU') : '—') },
+    { title: 'Пароль', key: 'password', render: (_, item) => <Space><StatusBadge label={item.must_change_password ? 'Смена обязательна' : 'Обычный'} tone={item.must_change_password ? 'warning' : 'success'} />{item.password_expiry_warning ? <StatusBadge label="Скоро истекает" tone="warning" /> : null}</Space> },
+    { title: 'Блокировка', dataIndex: 'is_locked', key: 'is_locked', render: (value: boolean) => <StatusBadge label={value ? 'Заблокирован' : 'Открыт'} tone={value ? 'error' : 'success'} /> },
     {
       title: 'Действия',
       key: 'actions',
       render: (_, item) => (
         <Space>
           <Button icon={<EditOutlined />} onClick={() => openModal(item)} />
+          <Popconfirm title="Сгенерировать временный пароль?" onConfirm={() => generateTemporaryPassword(item.id).then((result) => { setTemporaryPassword(result.temporary_password); message.success('Временный пароль создан'); load(); })}>
+            <Button icon={<KeyOutlined />} />
+          </Popconfirm>
+          <Popconfirm title={item.is_locked ? 'Разблокировать пользователя?' : 'Заблокировать пользователя?'} onConfirm={() => setUserLocked(item.id, !item.is_locked).then(load)}>
+            <Button icon={item.is_locked ? <UnlockOutlined /> : <LockOutlined />} />
+          </Popconfirm>
           <Popconfirm title={item.is_active ? 'Деактивировать пользователя?' : 'Активировать пользователя?'} onConfirm={() => setUserActive(item.id, !item.is_active).then(load)}>
             <Button icon={<PoweroffOutlined />} />
           </Popconfirm>
@@ -146,9 +145,19 @@ export function AdminUsersPage() {
 
   return (
     <div className="sp-page">
-      <PageHeader title="Пользователи" description="Единая модель пользователей для внутренних сотрудников и подрядчиков." actions={<Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>Добавить пользователя</Button>} />
-      <Section actions={<Space wrap><Input.Search placeholder="Поиск" allowClear onSearch={(search) => setFilters((current) => ({ ...current, search }))} className="sp-search-bar" /><Select allowClear placeholder="Тип" className="cr-filter" onChange={(user_type) => setFilters((current) => ({ ...current, user_type }))} options={[{ value: 'INTERNAL', label: 'INTERNAL' }, { value: 'CONTRACTOR', label: 'CONTRACTOR' }]} /><Select allowClear placeholder="Статус" className="cr-filter" onChange={(is_active) => setFilters((current) => ({ ...current, is_active }))} options={[{ value: true, label: 'Активные' }, { value: false, label: 'Отключенные' }]} /></Space>}>
-        <Table rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={{ pageSize: 10 }} scroll={{ x: 1300 }} />
+      <PageHeader title="Пользователи" description="Единая модель пользователей, локальные учётные данные, роли и членство в компаниях." actions={<Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>Добавить пользователя</Button>} />
+      {temporaryPassword ? (
+        <Alert
+          type="warning"
+          showIcon
+          closable
+          onClose={() => setTemporaryPassword(null)}
+          message="Временный пароль показан один раз"
+          description={<Input.Password readOnly value={temporaryPassword} />}
+        />
+      ) : null}
+      <Section actions={<Space wrap><Input.Search placeholder="Поиск" allowClear onSearch={(search) => setFilters((current) => ({ ...current, search }))} className="sp-search-bar" /><Select allowClear placeholder="Тип" className="cr-filter" onChange={(user_type) => setFilters((current) => ({ ...current, user_type }))} options={[{ value: 'INTERNAL', label: 'INTERNAL' }, { value: 'CONTRACTOR', label: 'CONTRACTOR' }]} /><Select allowClear placeholder="Статус" className="cr-filter" onChange={(is_active) => setFilters((current) => ({ ...current, is_active }))} options={[{ value: true, label: 'Активные' }, { value: false, label: 'Отключённые' }]} /></Space>}>
+        <Table rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={{ pageSize: 10 }} scroll={{ x: 1500 }} />
       </Section>
       <Modal title={editing ? 'Редактировать пользователя' : 'Новый пользователь'} open={modalOpen} onOk={save} onCancel={() => setModalOpen(false)} confirmLoading={saving} destroyOnHidden width={720}>
         <Form form={form} layout="vertical">
@@ -158,7 +167,7 @@ export function AdminUsersPage() {
             <Form.Item name="email" label="Email"><Input /></Form.Item>
             <Form.Item name="user_type" label="Тип" rules={[{ required: true }]}><Select options={[{ value: 'INTERNAL', label: 'INTERNAL' }, { value: 'CONTRACTOR', label: 'CONTRACTOR' }]} /></Form.Item>
             <Form.Item name="auth_source" label="Источник авторизации" rules={[{ required: true }]}><Select options={[{ value: 'LOCAL', label: 'LOCAL' }, { value: 'ADFS', label: 'ADFS' }, { value: 'LDAP', label: 'LDAP' }]} /></Form.Item>
-            <Form.Item name="is_active" label="Статус"><Select options={[{ value: true, label: 'Активен' }, { value: false, label: 'Отключен' }]} /></Form.Item>
+            <Form.Item name="is_active" label="Статус"><Select options={[{ value: true, label: 'Активен' }, { value: false, label: 'Отключён' }]} /></Form.Item>
           </div>
           <Form.Item name="role_ids" label="Роли"><Select mode="multiple" options={roles.map((role) => ({ value: role.id, label: `${role.code} — ${role.name}` }))} /></Form.Item>
           <Form.Item noStyle shouldUpdate={(previous, current) => previous.user_type !== current.user_type}>

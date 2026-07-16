@@ -9,15 +9,28 @@ from app.services.admin_service import SYSTEM_ROLES, get_or_404
 from app.services.audit_service import write_audit
 
 PERMISSIONS: dict[str, tuple[str, str | None]] = {
+    "dashboard.view": ("View security operations dashboard", None),
     "admin.dashboard.view": ("View admin dashboard", None),
     "admin.contractors.view": ("View contractors", None),
     "admin.contractors.manage": ("Manage contractors", None),
     "admin.users.view": ("View users", None),
     "admin.users.manage": ("Manage users", None),
+    "admin.users.credentials.manage": ("Manage user credentials", None),
+    "admin.users.security.manage": ("Manage user security", None),
     "admin.roles.view": ("View roles", None),
     "admin.roles.manage": ("Manage roles", None),
     "admin.audit.view": ("View audit", None),
     "admin.system_status.view": ("View system status", None),
+    "admin.notifications.view": ("View admin notifications", None),
+    "admin.notifications.manage": ("Manage admin notifications", None),
+    "admin.connections.view": ("View connection settings", None),
+    "admin.connections.manage": ("Manage connection settings", None),
+    "admin.connections.test": ("Test connection settings", None),
+    "admin.directory_groups.view": ("View directory groups", None),
+    "admin.directory_groups.manage": ("Manage directory groups", None),
+    "admin.auth_mappings.view": ("View auth mappings", None),
+    "admin.auth_mappings.manage": ("Manage auth mappings", None),
+    "admin.connection_logs.view": ("View connection logs", None),
     "requests.view": ("View requests", None),
     "requests.create": ("Create requests", None),
     "requests.update": ("Update requests", None),
@@ -27,25 +40,53 @@ PERMISSIONS: dict[str, tuple[str, str | None]] = {
     "requests.comments.internal": ("Use internal request comments", None),
     "requests.attachments.internal": ("Use internal request attachments", None),
     "contractor.requests.view": ("View contractor requests", None),
+    "contractor.portal.view": ("View contractor portal", None),
+    "contractor.dashboard.view": ("View contractor dashboard", None),
     "contractor.requests.accept": ("Accept contractor assignments", None),
     "contractor.requests.update_status": ("Update contractor assignment status", None),
     "contractor.comments.create": ("Create contractor comments", None),
+    "contractor.comments.update_own": ("Update own contractor comments", None),
+    "contractor.comments.delete_own": ("Delete own contractor comments", None),
     "contractor.attachments.upload": ("Upload contractor attachments", None),
+    "contractor.attachments.delete_own": ("Delete own contractor attachments", None),
+    "contractor.work_results.upload": ("Upload contractor work results", None),
+    "contractor.profile.view": ("View contractor profile", None),
+    "contractor.company.view": ("View own contractor company", None),
+    "contractor.team.view": ("View own contractor team", None),
+    "contractor.notifications.view": ("View contractor notifications", None),
     "reference_data.view": ("View reference data", None),
     "reference_data.manage": ("Manage reference data", None),
+    "workflows.view": ("View workflow definitions", None),
+    "workflows.manage": ("Manage workflow definitions", None),
+    "workflows.publish": ("Publish workflow definitions", None),
+    "workflows.instances.view": ("View workflow instances", None),
+    "workflows.instances.transition": ("Execute workflow transitions", None),
+    "workflows.sla.view": ("View workflow SLA policies and timers", None),
+    "workflows.sla.manage": ("Manage workflow SLA policies", None),
 }
 
 ALL_PERMISSION_CODES = set(PERMISSIONS)
 
 SECURITY_ADMIN_PERMISSIONS = ALL_PERMISSION_CODES - {
     "contractor.requests.view",
+    "contractor.portal.view",
+    "contractor.dashboard.view",
     "contractor.requests.accept",
     "contractor.requests.update_status",
     "contractor.comments.create",
+    "contractor.comments.update_own",
+    "contractor.comments.delete_own",
     "contractor.attachments.upload",
+    "contractor.attachments.delete_own",
+    "contractor.work_results.upload",
+    "contractor.profile.view",
+    "contractor.company.view",
+    "contractor.team.view",
+    "contractor.notifications.view",
 }
 
 SECURITY_OPERATOR_PERMISSIONS = {
+    "dashboard.view",
     "requests.view",
     "requests.create",
     "requests.update",
@@ -54,27 +95,59 @@ SECURITY_OPERATOR_PERMISSIONS = {
     "requests.comments.internal",
     "requests.attachments.internal",
     "reference_data.view",
+    "workflows.instances.view",
+    "workflows.instances.transition",
 }
 
 CONTRACTOR_PERMISSIONS = {
     "contractor.requests.view",
+    "contractor.portal.view",
+    "contractor.dashboard.view",
     "contractor.requests.accept",
     "contractor.requests.update_status",
     "contractor.comments.create",
+    "contractor.comments.update_own",
     "contractor.attachments.upload",
+    "contractor.work_results.upload",
+    "contractor.profile.view",
+    "contractor.notifications.view",
+}
+
+CONTRACTOR_MANAGER_PERMISSIONS = CONTRACTOR_PERMISSIONS | {
+    "contractor.comments.delete_own",
+    "contractor.attachments.delete_own",
+    "contractor.company.view",
+    "contractor.team.view",
 }
 
 VIEWER_PERMISSIONS = {
+    "dashboard.view",
     "admin.dashboard.view",
     "requests.view",
     "reference_data.view",
+    "workflows.instances.view",
+}
+
+SECURITY_ADMIN_PERMISSIONS = SECURITY_ADMIN_PERMISSIONS | {
+    "admin.users.credentials.manage",
+    "admin.users.security.manage",
+    "admin.notifications.view",
+    "admin.notifications.manage",
+    "admin.connections.view",
+    "admin.connections.manage",
+    "admin.connections.test",
+    "admin.directory_groups.view",
+    "admin.directory_groups.manage",
+    "admin.auth_mappings.view",
+    "admin.auth_mappings.manage",
+    "admin.connection_logs.view",
 }
 
 ROLE_PERMISSION_CODES: dict[str, set[str]] = {
     "PLATFORM_ADMIN": ALL_PERMISSION_CODES,
     "SECURITY_ADMIN": SECURITY_ADMIN_PERMISSIONS,
     "SECURITY_OPERATOR": SECURITY_OPERATOR_PERMISSIONS,
-    "CONTRACTOR_MANAGER": CONTRACTOR_PERMISSIONS,
+    "CONTRACTOR_MANAGER": CONTRACTOR_MANAGER_PERMISSIONS,
     "CONTRACTOR_USER": CONTRACTOR_PERMISSIONS,
     "VIEWER": VIEWER_PERMISSIONS,
 }

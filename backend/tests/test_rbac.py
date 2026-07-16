@@ -14,6 +14,7 @@ from app.main import app
 from app.models.admin import AdminAuditLog, AuthSource, ContractorMembership, Permission, Role, RolePermission, User, UserRole, UserType
 from app.models.reference_data import City, Contractor, ContractorResponsibility, Facility, Premise, WorkType
 from app.models.requests import AssignmentStatus, ContractorRequest, RequestAssignment, RequestStatus, RequestWorkType
+from app.services.password_service import password_hasher
 from app.services.rbac_service import seed_rbac
 
 
@@ -69,6 +70,12 @@ def user_with_role(db: Session, role_code: str, *, active: bool = True, locked: 
 
 def auth(user: User) -> dict[str, str]:
     return {"X-User-Id": str(user.id)}
+
+
+def set_local_password(db: Session, user: User, password: str = "Talan7680!") -> None:
+    user.password_hash = password_hasher.hash(password)
+    user.must_change_password = False
+    db.commit()
 
 
 def refs(db: Session) -> dict[str, object]:
@@ -212,3 +219,69 @@ def test_x_contractor_id_does_not_bypass_x_user_id(client: TestClient, db_sessio
     user_a = user_with_role(db_session, "CONTRACTOR_USER", contractors=[contractor_a])
     headers = {**auth(user_a), "X-Contractor-Id": str(contractor_b.id)}
     assert client.get(f"/api/v1/contractor/requests/{request_b.id}", headers=headers).status_code == 404
+
+
+def test_contractor_cookie_session_uses_membership_context(client: TestClient, db_session: Session) -> None:
+    data = refs(db_session)
+    contractor_a = data["contractor_a"]
+    contractor_b = data["contractor_b"]
+    work_type = data["work_type"]
+    city = data["city"]
+    facility = data["facility"]
+    assert isinstance(contractor_a, Contractor) and isinstance(contractor_b, Contractor) and isinstance(work_type, WorkType)
+    assert isinstance(city, City) and isinstance(facility, Facility)
+    request_a = assigned_request(db_session, contractor_a, work_type, city, facility)
+    request_b = assigned_request(db_session, contractor_b, work_type, city, facility)
+    user = user_with_role(db_session, "CONTRACTOR_USER", contractors=[contractor_a])
+    set_local_password(db_session, user)
+
+    login = client.post("/api/v1/auth/login", json={"username": user.username, "password": "Talan7680!", "provider": "LOCAL"})
+    assert login.status_code == 200
+
+    me = client.get("/api/v1/contractor/me")
+    assert me.status_code == 200
+    assert me.json()["contractors"][0]["id"] == str(contractor_a.id)
+    assert client.get(f"/api/v1/contractor/requests/{request_a.id}").status_code == 200
+    assert client.get(f"/api/v1/contractor/requests/{request_b.id}").status_code == 404
+
+
+def test_contractor_cookie_session_requires_csrf_for_mutation(client: TestClient, db_session: Session) -> None:
+    data = refs(db_session)
+    contractor = data["contractor_a"]
+    work_type = data["work_type"]
+    city = data["city"]
+    facility = data["facility"]
+    assert isinstance(contractor, Contractor) and isinstance(work_type, WorkType) and isinstance(city, City) and isinstance(facility, Facility)
+    request = assigned_request(db_session, contractor, work_type, city, facility)
+    user = user_with_role(db_session, "CONTRACTOR_USER", contractors=[contractor])
+    set_local_password(db_session, user)
+    login = client.post("/api/v1/auth/login", json={"username": user.username, "password": "Talan7680!", "provider": "LOCAL"})
+    assert login.status_code == 200
+
+    assert client.post(f"/api/v1/contractor/requests/{request.id}/accept").status_code == 403
+    csrf = client.cookies.get("sp_csrf")
+    assert csrf
+    response = client.post(f"/api/v1/contractor/requests/{request.id}/accept", headers={"X-CSRF-Token": csrf})
+    assert response.status_code == 200
+
+
+def test_contractor_membership_deactivation_blocks_next_request(client: TestClient, db_session: Session) -> None:
+    data = refs(db_session)
+    contractor = data["contractor_a"]
+    work_type = data["work_type"]
+    city = data["city"]
+    facility = data["facility"]
+    assert isinstance(contractor, Contractor) and isinstance(work_type, WorkType) and isinstance(city, City) and isinstance(facility, Facility)
+    request = assigned_request(db_session, contractor, work_type, city, facility)
+    user = user_with_role(db_session, "CONTRACTOR_USER", contractors=[contractor])
+    set_local_password(db_session, user)
+    login = client.post("/api/v1/auth/login", json={"username": user.username, "password": "Talan7680!", "provider": "LOCAL"})
+    assert login.status_code == 200
+    assert client.get(f"/api/v1/contractor/requests/{request.id}").status_code == 200
+
+    membership = db_session.scalar(select(ContractorMembership).where(ContractorMembership.user_id == user.id))
+    assert membership is not None
+    membership.is_active = False
+    db_session.commit()
+
+    assert client.get(f"/api/v1/contractor/requests/{request.id}").status_code == 404
