@@ -56,6 +56,13 @@ PERMISSIONS: dict[str, tuple[str, str | None]] = {
     "contractor.notifications.view": ("View contractor notifications", None),
     "reference_data.view": ("View reference data", None),
     "reference_data.manage": ("Manage reference data", None),
+    "workflows.view": ("View workflow definitions", None),
+    "workflows.manage": ("Manage workflow definitions", None),
+    "workflows.publish": ("Publish workflow definitions", None),
+    "workflows.instances.view": ("View workflow instances", None),
+    "workflows.instances.transition": ("Execute workflow transitions", None),
+    "workflows.sla.view": ("View workflow SLA policies and timers", None),
+    "workflows.sla.manage": ("Manage workflow SLA policies", None),
 }
 
 ALL_PERMISSION_CODES = set(PERMISSIONS)
@@ -88,6 +95,8 @@ SECURITY_OPERATOR_PERMISSIONS = {
     "requests.comments.internal",
     "requests.attachments.internal",
     "reference_data.view",
+    "workflows.instances.view",
+    "workflows.instances.transition",
 }
 
 CONTRACTOR_PERMISSIONS = {
@@ -116,6 +125,7 @@ VIEWER_PERMISSIONS = {
     "admin.dashboard.view",
     "requests.view",
     "reference_data.view",
+    "workflows.instances.view",
 }
 
 SECURITY_ADMIN_PERMISSIONS = SECURITY_ADMIN_PERMISSIONS | {
