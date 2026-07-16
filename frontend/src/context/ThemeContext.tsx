@@ -9,11 +9,11 @@ type ThemeContextValue = {
 const appTheme: ThemeConfig = {
   algorithm: theme.defaultAlgorithm,
   token: {
-    colorPrimary: '#1677ff',
+    colorPrimary: '#2089d6',
     colorSuccess: '#2f9e44',
     colorWarning: '#f59f00',
     colorError: '#d9480f',
-    colorInfo: '#1677ff',
+    colorInfo: '#2089d6',
     colorTextBase: '#20242a',
     colorBgBase: '#f7f8fa',
     borderRadius: 6,
@@ -23,7 +23,7 @@ const appTheme: ThemeConfig = {
   components: {
     Layout: {
       headerBg: '#ffffff',
-      siderBg: '#111827',
+      siderBg: '#0d253f',
       bodyBg: '#f7f8fa',
     },
     Card: {

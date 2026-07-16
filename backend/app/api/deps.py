@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.admin import AuthSource, ContractorMembership, Role, RolePermission, User, UserRole, UserType
 from app.services.audit_service import write_audit
+from app.services.auth_service import session_from_access_cookie, token_hash
 from app.services.rbac_service import permission_codes_for_user, seed_rbac
 
 
@@ -38,13 +39,18 @@ def load_user(db: Session, user_id: UUID) -> User | None:
 def get_current_user_stub(
     x_user_id: UUID | None = Header(default=None),
     x_user_role: str | None = Header(default=None),
+    access_cookie: str | None = Cookie(default=None, alias=settings.auth_access_cookie_name),
     db: Session = Depends(get_db),
 ) -> User:
-    # TODO: Replace development headers with real authentication context.
-    if not dev_auth_enabled():
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication is required")
     seed_rbac(db)
-    user: User | None = load_user(db, x_user_id) if x_user_id is not None else None
+    session = session_from_access_cookie(db, access_cookie)
+    user: User | None = None
+    if session is not None:
+        user = load_user(db, session.user_id)
+    if user is None and not dev_auth_enabled():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication is required")
+    if user is None:
+        user = load_user(db, x_user_id) if x_user_id is not None else None
     if user is None and x_user_role:
         role = db.scalar(select(Role).where(Role.code == x_user_role))
         if role is not None:
@@ -79,6 +85,39 @@ def get_current_user_stub(
     return user
 
 
+def get_current_session(
+    access_cookie: str | None = Cookie(default=None, alias=settings.auth_access_cookie_name),
+    db: Session = Depends(get_db),
+):
+    session = session_from_access_cookie(db, access_cookie)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication is required")
+    return session
+
+
+def require_full_session(
+    access_cookie: str | None = Cookie(default=None, alias=settings.auth_access_cookie_name),
+    db: Session = Depends(get_db),
+) -> None:
+    session = session_from_access_cookie(db, access_cookie)
+    if session is not None and session.must_change_password:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="PASSWORD_CHANGE_REQUIRED")
+
+
+def require_csrf(
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+    csrf_cookie: str | None = Cookie(default=None, alias=settings.auth_csrf_cookie_name),
+    session=Depends(get_current_session),
+) -> None:
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
+    if not x_csrf_token or not csrf_cookie or x_csrf_token != csrf_cookie:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF_TOKEN_INVALID")
+    if token_hash(x_csrf_token) != session.csrf_token_hash:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF_TOKEN_INVALID")
+
+
 def get_current_permissions(user: User = Depends(get_current_user_stub)) -> set[str]:
     return permission_codes_for_user(user)
 
@@ -104,6 +143,7 @@ def require_permission(permission_code: str):
         db: Session = Depends(get_db),
         user: User = Depends(get_current_user_stub),
         permissions: set[str] = Depends(get_current_permissions),
+        _: None = Depends(require_full_session),
     ) -> User:
         if permission_code not in permissions:
             audit_access_denied(db, request, user, (permission_code,))
@@ -119,6 +159,7 @@ def require_any_permission(*permission_codes: str):
         db: Session = Depends(get_db),
         user: User = Depends(get_current_user_stub),
         permissions: set[str] = Depends(get_current_permissions),
+        _: None = Depends(require_full_session),
     ) -> User:
         if not any(code in permissions for code in permission_codes):
             audit_access_denied(db, request, user, permission_codes)
@@ -134,6 +175,7 @@ def require_all_permissions(*permission_codes: str):
         db: Session = Depends(get_db),
         user: User = Depends(get_current_user_stub),
         permissions: set[str] = Depends(get_current_permissions),
+        _: None = Depends(require_full_session),
     ) -> User:
         if not all(code in permissions for code in permission_codes):
             audit_access_denied(db, request, user, permission_codes)
@@ -168,7 +210,7 @@ def require_contractor_permission(permission_code: str):
     ) -> ContractorAuthContext:
         # TODO: Remove X-Contractor-Id fallback when real contractor auth exists.
         if x_user_id is not None:
-            user = get_current_user_stub(x_user_id=x_user_id, x_user_role=None, db=db)
+            user = get_current_user_stub(x_user_id=x_user_id, x_user_role=None, access_cookie=None, db=db)
             permissions = permission_codes_for_user(user)
             if permission_code not in permissions:
                 write_audit(

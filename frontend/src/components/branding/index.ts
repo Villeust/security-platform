@@ -1,0 +1,1 @@
+export { PlatformLogo } from './PlatformLogo';

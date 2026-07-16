@@ -1,9 +1,56 @@
 import { api } from '../../../services/api';
-import type { AdminContractor, AdminDashboard, AdminListParams, AdminUser, AuditLog, Permission, Role, SystemStatus, Uuid } from '../types';
+import type {
+  AdminContractor,
+  AdminDashboard,
+  AdminListParams,
+  AdminNotification,
+  AdminUser,
+  AuthProviderStatus,
+  AuditLog,
+  AuthGroupMapping,
+  ConnectionConfiguration,
+  ConnectionEventLog,
+  ConnectionProviderType,
+  ConnectionTestResponse,
+  DirectoryGroup,
+  LoginResponse,
+  Permission,
+  Role,
+  SystemStatus,
+  UserCreateResponse,
+  Uuid,
+} from '../types';
 
 export async function getCurrentUser() {
   const response = await api.get<AdminUser>('/api/v1/admin/me');
   return response.data;
+}
+
+export async function getAuthMe() {
+  const response = await api.get<AdminUser>('/api/v1/auth/me');
+  return response.data;
+}
+
+export async function getAuthProviders() {
+  const response = await api.get<AuthProviderStatus[]>('/api/v1/auth/providers');
+  return response.data;
+}
+
+export async function login(payload: { username: string; password: string; provider?: 'LOCAL' | 'LDAP' }) {
+  const response = await api.post<LoginResponse>('/api/v1/auth/login', { provider: 'LOCAL', ...payload });
+  return response.data;
+}
+
+export async function logout() {
+  await api.post('/api/v1/auth/logout');
+}
+
+export async function changePassword(currentPassword: string, newPassword: string, newPasswordConfirmation: string) {
+  await api.post('/api/v1/auth/change-password', {
+    current_password: currentPassword,
+    new_password: newPassword,
+    new_password_confirmation: newPasswordConfirmation,
+  });
 }
 
 export async function getDevUsers() {
@@ -47,7 +94,17 @@ export async function getUsers(params: AdminListParams = {}) {
 }
 
 export async function createUser(payload: Record<string, unknown>) {
-  const response = await api.post<AdminUser>('/api/v1/admin/users', payload);
+  const response = await api.post<UserCreateResponse>('/api/v1/admin/users', payload);
+  return response.data;
+}
+
+export async function generateTemporaryPassword(id: Uuid) {
+  const response = await api.post<UserCreateResponse>(`/api/v1/admin/users/${id}/generate-temporary-password`);
+  return response.data;
+}
+
+export async function setUserLocked(id: Uuid, locked: boolean, comment?: string) {
+  const response = await api.post<AdminUser>(`/api/v1/admin/users/${id}/${locked ? 'lock' : 'unlock'}`, locked ? { reason: 'ADMINISTRATIVE', comment } : { comment });
   return response.data;
 }
 
@@ -115,6 +172,66 @@ export async function getAudit(params: AdminListParams = {}) {
 
 export async function getAdminReference<T>(resource: string, params: AdminListParams = {}) {
   const response = await api.get<T[]>(`/api/v1/admin/${resource}`, { params: { limit: 100, ...params } });
+  return response.data;
+}
+
+export async function getNotifications(params: AdminListParams = {}) {
+  const response = await api.get<AdminNotification[]>('/api/v1/admin/notifications', { params: { limit: 100, ...params } });
+  return response.data;
+}
+
+export async function getUnreadNotificationsCount() {
+  const response = await api.get<{ count: number }>('/api/v1/admin/notifications/unread-count');
+  return response.data.count;
+}
+
+export async function markNotificationRead(id: Uuid) {
+  const response = await api.post<AdminNotification>(`/api/v1/admin/notifications/${id}/read`);
+  return response.data;
+}
+
+export async function resolveNotification(id: Uuid) {
+  const response = await api.post<AdminNotification>(`/api/v1/admin/notifications/${id}/resolve`);
+  return response.data;
+}
+
+export async function getConnectionConfig(provider: Lowercase<ConnectionProviderType>) {
+  const response = await api.get<ConnectionConfiguration>(`/api/v1/admin/connections/${provider}`);
+  return response.data;
+}
+
+export async function updateConnectionConfig(provider: Lowercase<ConnectionProviderType>, payload: Record<string, unknown>) {
+  const response = await api.put<ConnectionConfiguration>(`/api/v1/admin/connections/${provider}`, payload);
+  return response.data;
+}
+
+export async function testConnection(provider: Lowercase<ConnectionProviderType>) {
+  const response = await api.post<ConnectionTestResponse>(`/api/v1/admin/connections/${provider}/test`);
+  return response.data;
+}
+
+export async function getDirectoryGroups(params: AdminListParams = {}) {
+  const response = await api.get<DirectoryGroup[]>('/api/v1/admin/directory-groups', { params: { limit: 100, ...params } });
+  return response.data;
+}
+
+export async function importDirectoryGroups(groups: Array<Pick<DirectoryGroup, 'provider_type' | 'external_id' | 'distinguished_name' | 'name' | 'description' | 'member_count'>>) {
+  const response = await api.post<DirectoryGroup[]>('/api/v1/admin/directory-groups/import', { groups });
+  return response.data;
+}
+
+export async function getAuthMappings(params: AdminListParams = {}) {
+  const response = await api.get<AuthGroupMapping[]>('/api/v1/admin/auth-mappings', { params: { limit: 100, ...params } });
+  return response.data;
+}
+
+export async function createAuthMapping(payload: Record<string, unknown>) {
+  const response = await api.post<AuthGroupMapping>('/api/v1/admin/auth-mappings', payload);
+  return response.data;
+}
+
+export async function getConnectionLogs(params: AdminListParams = {}) {
+  const response = await api.get<ConnectionEventLog[]>('/api/v1/admin/connection-logs', { params: { limit: 100, ...params } });
   return response.data;
 }
 

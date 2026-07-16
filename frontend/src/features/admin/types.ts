@@ -91,12 +91,40 @@ export type AdminUser = {
   is_active: boolean;
   is_locked: boolean;
   last_login_at: string | null;
+  password_changed_at?: string | null;
+  must_change_password: boolean;
+  failed_login_attempts?: number;
+  locked_until?: string | null;
+  last_login_ip?: string | null;
+  authentication_enabled?: boolean;
+  password_expires_at?: string | null;
+  password_expired?: boolean;
+  password_days_remaining?: number | null;
+  password_expiry_warning?: boolean;
+  lock_reason?: string | null;
+  locked_at?: string | null;
   role_ids: Uuid[];
   role_codes: string[];
   permissions: string[];
   contractor_memberships: ContractorMembership[];
   created_at: string;
   updated_at: string;
+};
+
+export type UserCreateResponse = AdminUser & {
+  temporary_password: string | null;
+};
+
+export type LoginResponse = {
+  user: AdminUser;
+  must_change_password: boolean;
+};
+
+export type AuthProviderStatus = {
+  provider: 'LOCAL' | 'LDAP' | 'ADFS';
+  configured: boolean;
+  enabled: boolean;
+  message?: string | null;
 };
 
 export type AuditLog = {
@@ -119,6 +147,80 @@ export type AdminListParams = {
   skip?: number;
   limit?: number;
   [key: string]: string | number | boolean | undefined;
+};
+
+export type AdminNotification = {
+  id: Uuid;
+  type: string;
+  severity: string;
+  title: string;
+  message: string;
+  user_id: Uuid | null;
+  details: Record<string, unknown> | null;
+  is_read: boolean;
+  is_resolved: boolean;
+  created_at: string;
+  read_at: string | null;
+  resolved_at: string | null;
+};
+
+export type ConnectionProviderType = 'LDAP' | 'ADFS' | 'SMTP';
+
+export type ConnectionConfiguration = {
+  id: Uuid;
+  provider_type: ConnectionProviderType;
+  name: string;
+  is_active: boolean;
+  configuration_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  last_tested_at: string | null;
+  last_test_status: string | null;
+  last_test_message: string | null;
+};
+
+export type ConnectionTestResponse = {
+  status: string;
+  message: string;
+  safe_details: Record<string, unknown> | null;
+};
+
+export type DirectoryGroup = {
+  id: Uuid;
+  provider_type: ConnectionProviderType;
+  external_id: string;
+  distinguished_name: string;
+  name: string;
+  description: string | null;
+  source_configuration_id: Uuid | null;
+  member_count: number | null;
+  imported_at: string;
+  last_synced_at: string | null;
+  is_active: boolean;
+};
+
+export type AuthGroupMapping = {
+  id: Uuid;
+  directory_group_id: Uuid;
+  role_id: Uuid;
+  contractor_id: Uuid | null;
+  all_cities: boolean;
+  priority: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ConnectionEventLog = {
+  id: Uuid;
+  provider_type: ConnectionProviderType;
+  configuration_id: Uuid | null;
+  event_type: string;
+  status: string;
+  message: string;
+  safe_details: Record<string, unknown> | null;
+  actor_id: Uuid | null;
+  created_at: string;
 };
 
 export type AdminReferenceRecord = {
