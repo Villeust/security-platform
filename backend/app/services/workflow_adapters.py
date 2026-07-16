@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -11,9 +11,11 @@ from app.models.workflow import WorkflowTransition
 
 @dataclass(frozen=True)
 class WorkflowActor:
-    user: User
+    user: User | None
     permissions: set[str]
     actor_type: str
+    actor_id: UUID | None = None
+    scope: dict[str, Any] = field(default_factory=dict)
 
 
 class WorkflowEntityAdapter(ABC):

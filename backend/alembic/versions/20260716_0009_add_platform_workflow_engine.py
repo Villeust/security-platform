@@ -311,14 +311,35 @@ def seed_workflow_permissions() -> None:
         sa.column("role_id", sa.Uuid()),
         sa.column("permission_id", sa.Uuid()),
     )
+    workflow_permission_ids = [row["id"] for row in permission_rows]
+    existing_role_permissions = set()
+    if workflow_permission_ids:
+        existing_role_permissions = {
+            (as_uuid(row["role_id"]), as_uuid(row["permission_id"]))
+            for row in bind.execute(
+                sa.text(
+                    "select role_id, permission_id from role_permissions "
+                    "where permission_id in :permission_ids"
+                ).bindparams(sa.bindparam("permission_ids", expanding=True)),
+                {"permission_ids": tuple(workflow_permission_ids)},
+            ).mappings()
+        }
     role_permission_rows = []
+    pending_role_permissions = set()
     for role in role_rows:
         for permission_code in ROLE_PERMISSION_CODES.get(role["code"], set()):
             permission_id = permission_id_by_code.get(permission_code)
-            if permission_id is not None:
-                role_permission_rows.append({"role_id": as_uuid(role["id"]), "permission_id": as_uuid(permission_id)})
-    if role_permission_rows:
-        op.bulk_insert(role_permissions_table, role_permission_rows)
+            if permission_id is None:
+                continue
+            role_id = as_uuid(role["id"])
+            permission_uuid = as_uuid(permission_id)
+            key = (role_id, permission_uuid)
+            if key in existing_role_permissions or key in pending_role_permissions:
+                continue
+            role_permission_rows.append({"role_id": role_id, "permission_id": permission_uuid})
+            pending_role_permissions.add(key)
+    for row in role_permission_rows:
+        bind.execute(role_permissions_table.insert().values(**row))
 
 
 def downgrade() -> None:

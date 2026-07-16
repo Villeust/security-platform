@@ -21,6 +21,8 @@ Use the platform start script from the repository root:
 
 The script checks required tooling, verifies ports, prepares dependencies, runs migrations and starts backend and frontend services.
 
+Before launching backend and frontend processes, `scripts/start-dev.ps1` runs Platform Doctor. Startup continues when Doctor reports warnings only. If Doctor reports errors, startup aborts unless `-Force` is supplied.
+
 ## Start-dev with Seed
 
 To load demo data during startup:
@@ -54,6 +56,81 @@ uv run pytest
 ```
 
 Frontend checks depend on the scripts configured in `frontend/package.json`.
+
+## Platform Doctor
+
+Platform Doctor verifies the local development environment before startup and after upgrades.
+
+Run from the `backend` directory:
+
+```bash
+uv run python -m app.scripts.platform_doctor
+```
+
+Machine-readable output:
+
+```bash
+uv run python -m app.scripts.platform_doctor --json
+```
+
+Verbose text output without ANSI colors:
+
+```bash
+uv run python -m app.scripts.platform_doctor --verbose --no-color
+```
+
+Safe local fixes:
+
+```bash
+uv run python -m app.scripts.platform_doctor --fix
+```
+
+`--fix` may recreate missing local folders, create runtime folders, clear stale pid files, and remove stale lock files. It never deletes the database, stamps Alembic, runs migrations, changes passwords, inserts seed data, or modifies business data.
+
+Doctor checks:
+
+- Python, `uv`, virtual environment, and backend dependencies.
+- Database connection, engine, path, writability, and SQLite foreign key mode.
+- Alembic current/head revision and missing migration diagnostics.
+- Workflow tables, indexes, foreign keys, and row counts.
+- RBAC roles, permissions, duplicate mappings, and orphan mappings.
+- Authentication tables, password policy, temporary password settings, and CSRF cookie settings.
+- Contractor tables for contractors, memberships, assignments, requests, and history.
+- Demo seed users, contractor request workflow definition/version, and stable reference IDs.
+- `backend/storage` existence and writability.
+- `.env`, required development variables, JWT/secret configuration, SMTP, LDAP, and ADFS status without printing secret values.
+
+Troubleshooting examples:
+
+```text
+Workflow tables exist but Alembic revision is older than workflow migration
+```
+
+Run:
+
+```bash
+uv run python -m app.scripts.recover_partial_workflow_migration --dry-run
+```
+
+```text
+Database revision does not match Alembic head
+```
+
+Run:
+
+```bash
+uv run alembic upgrade head
+```
+
+```text
+Storage folder is missing
+```
+
+Run:
+
+```bash
+uv run python -m app.scripts.platform_doctor --fix
+```
 
 ## Seed
 

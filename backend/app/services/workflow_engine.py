@@ -30,6 +30,14 @@ from app.services.workflow_adapters import WorkflowActor, workflow_adapters
 SAFE_CONFIG_KEYS = {"required_fields", "required_attachment_categories", "minimum_attachment_count", "allowed_actor_types", "allowed_permissions"}
 
 
+def workflow_actor_id(actor: WorkflowActor) -> UUID | None:
+    return actor.actor_id or (actor.user.id if actor.user is not None else None)
+
+
+def workflow_audit_actor_id(actor: WorkflowActor) -> UUID | None:
+    return actor.user.id if actor.user is not None else None
+
+
 def latest_definition(db: Session, entity_type: str, workflow_code: str | None = None) -> WorkflowDefinition:
     query = select(WorkflowDefinition).where(
         WorkflowDefinition.entity_type == entity_type,
@@ -122,7 +130,7 @@ def start_workflow(
     db.flush()
     create_sla_timers(db, instance, state_id=state.id, transition_id=None, now=now)
     add_outbox(db, DomainEventType.WORKFLOW_STARTED, instance, {"state": state.code, "context": adapter.build_safe_context(entity)})
-    write_audit(db, "WORKFLOW_STARTED", "WorkflowInstance", instance.id, actor_id=actor.user.id, actor_type=actor.actor_type, new_data={"entity_type": entity_type, "entity_id": str(entity_id)})
+    write_audit(db, "WORKFLOW_STARTED", "WorkflowInstance", instance.id, actor_id=workflow_audit_actor_id(actor), actor_type=actor.actor_type, new_data={"entity_type": entity_type, "entity_id": str(entity_id)})
     db.flush()
     return instance
 
@@ -182,6 +190,38 @@ def execute_transition(
     workflow_code: str | None = None,
     instance_key: str = "default",
 ) -> WorkflowTransitionExecution:
+    return execute_transition_with_callback(
+        db,
+        entity_type,
+        entity_id,
+        transition_code,
+        actor,
+        apply_callback=None,
+        comment=comment,
+        reason_code=reason_code,
+        input_data=input_data,
+        lock_version=lock_version,
+        idempotency_key=idempotency_key,
+        workflow_code=workflow_code,
+        instance_key=instance_key,
+    )
+
+
+def execute_transition_with_callback(
+    db: Session,
+    entity_type: str,
+    entity_id: UUID,
+    transition_code: str,
+    actor: WorkflowActor,
+    apply_callback=None,
+    comment: str | None = None,
+    reason_code: str | None = None,
+    input_data: dict | None = None,
+    lock_version: int | None = None,
+    idempotency_key: str | None = None,
+    workflow_code: str | None = None,
+    instance_key: str = "default",
+) -> WorkflowTransitionExecution:
     adapter = workflow_adapters.get(entity_type)
     if adapter is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow adapter not found")
@@ -221,7 +261,7 @@ def execute_transition(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Reason is required")
     validate_required_fields(transition, input_data)
     adapter.validate_transition(db, entity, transition, actor, input_data)
-    result = adapter.apply_transition(db, entity, transition, actor, input_data)
+    result = apply_callback(entity, transition) if apply_callback is not None else adapter.apply_transition(db, entity, transition, actor, input_data)
     now = utc_now()
     execution = WorkflowTransitionExecution(
         workflow_instance_id=instance.id,
@@ -229,7 +269,7 @@ def execute_transition(
         from_state_id=instance.current_state_id,
         to_state_id=transition.to_state_id,
         actor_type=WorkflowActorType(actor.actor_type),
-        actor_id=actor.user.id,
+        actor_id=workflow_actor_id(actor),
         comment=comment,
         reason_code=reason_code,
         input_data=safe_json(input_data),
@@ -239,7 +279,7 @@ def execute_transition(
     instance.current_state_id = transition.to_state_id
     instance.lock_version += 1
     to_state = db.get(WorkflowState, transition.to_state_id)
-    if to_state and to_state.state_type == WorkflowStateType.COMPLETED:
+    if to_state and to_state.state_type in {WorkflowStateType.COMPLETED, WorkflowStateType.CLOSED}:
         instance.completed_at = now
     if to_state and to_state.state_type == WorkflowStateType.CANCELLED:
         instance.cancelled_at = now
@@ -249,7 +289,7 @@ def execute_transition(
     db.flush()
     add_outbox(db, DomainEventType.WORKFLOW_TRANSITION_EXECUTED, instance, {"transition": transition.code, "from_state_id": str(execution.from_state_id), "to_state_id": str(execution.to_state_id), "result": safe_json(result)})
     add_outbox(db, DomainEventType.WORKFLOW_STATE_CHANGED, instance, {"transition": transition.code, "state_id": str(transition.to_state_id)})
-    write_audit(db, "WORKFLOW_TRANSITION_EXECUTED", "WorkflowInstance", instance.id, actor_id=actor.user.id, actor_type=actor.actor_type, new_data={"transition": transition.code})
+    write_audit(db, "WORKFLOW_TRANSITION_EXECUTED", "WorkflowInstance", instance.id, actor_id=workflow_audit_actor_id(actor), actor_type=actor.actor_type, new_data={"transition": transition.code})
     if idempotency_key:
         db.add(
             WorkflowIdempotencyRecord(
@@ -262,6 +302,67 @@ def execute_transition(
             )
         )
     adapter.after_transition(db, entity, transition, actor)
+    db.flush()
+    return execution
+
+
+def record_external_transition(
+    db: Session,
+    entity_type: str,
+    entity_id: UUID,
+    transition_code: str,
+    actor: WorkflowActor,
+    comment: str | None = None,
+    reason_code: str | None = None,
+    input_data: dict | None = None,
+    safe_result_data: dict | None = None,
+    idempotency_key: str | None = None,
+    workflow_code: str | None = None,
+    instance_key: str = "default",
+) -> WorkflowTransitionExecution:
+    adapter = workflow_adapters.get(entity_type)
+    if adapter is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow adapter not found")
+    adapter.get_entity(db, entity_id, actor)
+    instance = get_instance_or_404(db, entity_type, entity_id, actor, workflow_code=workflow_code, instance_key=instance_key)
+    transition = db.scalar(
+        select(WorkflowTransition).where(
+            WorkflowTransition.workflow_definition_id == instance.workflow_definition_id,
+            WorkflowTransition.code == transition_code,
+            WorkflowTransition.is_active.is_(True),
+        )
+    )
+    if transition is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transition not found")
+    can_execute_transition(db, instance, transition, actor)
+    now = utc_now()
+    execution = WorkflowTransitionExecution(
+        workflow_instance_id=instance.id,
+        transition_id=transition.id,
+        from_state_id=instance.current_state_id,
+        to_state_id=transition.to_state_id,
+        actor_type=WorkflowActorType(actor.actor_type),
+        actor_id=workflow_actor_id(actor),
+        comment=comment,
+        reason_code=reason_code,
+        input_data=safe_json(input_data),
+        safe_result_data=safe_json(safe_result_data),
+        correlation_id=idempotency_key,
+    )
+    instance.current_state_id = transition.to_state_id
+    instance.lock_version += 1
+    to_state = db.get(WorkflowState, transition.to_state_id)
+    if to_state and to_state.state_type in {WorkflowStateType.COMPLETED, WorkflowStateType.CLOSED}:
+        instance.completed_at = now
+    if to_state and to_state.state_type == WorkflowStateType.CANCELLED:
+        instance.cancelled_at = now
+    complete_active_sla_timers(db, instance, now)
+    create_sla_timers(db, instance, state_id=transition.to_state_id, transition_id=transition.id, now=now)
+    db.add(execution)
+    db.flush()
+    add_outbox(db, DomainEventType.WORKFLOW_TRANSITION_EXECUTED, instance, {"transition": transition.code, "from_state_id": str(execution.from_state_id), "to_state_id": str(execution.to_state_id), "result": safe_json(safe_result_data)})
+    add_outbox(db, DomainEventType.WORKFLOW_STATE_CHANGED, instance, {"transition": transition.code, "state_id": str(transition.to_state_id)})
+    write_audit(db, "WORKFLOW_TRANSITION_EXECUTED", "WorkflowInstance", instance.id, actor_id=workflow_audit_actor_id(actor), actor_type=actor.actor_type, new_data={"transition": transition.code, "external_apply": True})
     db.flush()
     return execution
 
@@ -281,7 +382,7 @@ def cancel_workflow(db: Session, instance: WorkflowInstance, actor: WorkflowActo
     instance.cancelled_at = utc_now()
     instance.lock_version += 1
     add_outbox(db, DomainEventType.WORKFLOW_CANCELLED, instance, {"reason_code": reason_code})
-    write_audit(db, "WORKFLOW_CANCELLED", "WorkflowInstance", instance.id, actor_id=actor.user.id, actor_type=actor.actor_type, new_data={"reason_code": reason_code})
+    write_audit(db, "WORKFLOW_CANCELLED", "WorkflowInstance", instance.id, actor_id=workflow_audit_actor_id(actor), actor_type=actor.actor_type, new_data={"reason_code": reason_code})
     db.flush()
     return instance
 

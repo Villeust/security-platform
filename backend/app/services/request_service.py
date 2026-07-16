@@ -23,6 +23,14 @@ from app.models.requests import (
     utc_now,
 )
 from app.schemas.requests import ContractorRequestCreate, ContractorRequestUpdate
+from app.services.contractor_request_workflow import (
+    ensure_instance_for_request,
+    execute_request_status_transition,
+    record_request_status_transition_after_change,
+    synchronize_instance_from_request,
+    workflow_actor_from_request_history,
+)
+from app.services.workflow_adapters import WorkflowActor
 
 
 REQUEST_STATUS_TRANSITIONS: dict[RequestStatus, set[RequestStatus]] = {
@@ -257,6 +265,7 @@ def create_contractor_request(
     payload: ContractorRequestCreate,
     request_number: str | None = None,
     commit: bool = True,
+    workflow_actor: WorkflowActor | None = None,
 ) -> tuple[ContractorRequest, Sequence[UUID]]:
     request = ContractorRequest(
         request_number=request_number,
@@ -277,13 +286,15 @@ def create_contractor_request(
     db.flush()
     ensure_request_number(request)
     add_history(request, RequestHistoryEventType.CREATED, RequestHistoryActorType.INTERNAL_USER, new_status=RequestStatus.DRAFT)
+    actor = workflow_actor or workflow_actor_from_request_history(RequestHistoryActorType.INTERNAL_USER)
+    ensure_instance_for_request(db, request)
 
     unassigned: Sequence[UUID] = []
     if payload.save_as_draft:
         if not request.description:
             raise HTTPException(status_code=422, detail="description is required for draft")
     else:
-        request, unassigned = publish_contractor_request(db, request, commit=False)
+        request, unassigned = publish_contractor_request(db, request, commit=False, workflow_actor=actor)
 
     if commit:
         db.commit()
@@ -295,21 +306,38 @@ def publish_contractor_request(
     db: Session,
     request: ContractorRequest,
     commit: bool = True,
+    workflow_actor: WorkflowActor | None = None,
 ) -> tuple[ContractorRequest, Sequence[UUID]]:
     if request.status in {RequestStatus.CLOSED, RequestStatus.CANCELLED}:
         raise HTTPException(status_code=409, detail="Final request cannot be published")
+    actor = workflow_actor or workflow_actor_from_request_history(RequestHistoryActorType.INTERNAL_USER)
+    ensure_instance_for_request(db, request)
+    old_status = request.status
     _, premise, _ = validate_publishable_request(db, request)
     apply_premise_contacts(request, premise)
     unassigned = create_assignments_for_request(db, request)
     new_status = status_after_publish(request)
-    apply_request_status(
+
+    def apply_publish_status() -> None:
+        apply_request_status(
+            request,
+            new_status,
+            actor_type=RequestHistoryActorType.INTERNAL_USER,
+            event_type=RequestHistoryEventType.PUBLISHED,
+        )
+
+    execute_request_status_transition(
+        db,
         request,
+        old_status,
         new_status,
-        actor_type=RequestHistoryActorType.INTERNAL_USER,
-        event_type=RequestHistoryEventType.PUBLISHED,
+        actor,
+        apply_publish_status,
+        input_data={"action": "publish", "old_status": old_status.value, "new_status": new_status.value},
     )
     if request.status == new_status:
         add_history(request, RequestHistoryEventType.PUBLISHED, RequestHistoryActorType.INTERNAL_USER, new_status=new_status)
+    synchronize_instance_from_request(db, request)
     if commit:
         db.commit()
         db.refresh(request)
@@ -378,9 +406,12 @@ def change_request_status(
     new_status: RequestStatus,
     comment: str | None = None,
     commit: bool = True,
+    workflow_actor: WorkflowActor | None = None,
 ) -> ContractorRequest:
     if new_status not in REQUEST_STATUS_TRANSITIONS[request.status]:
         raise HTTPException(status_code=409, detail=f"Invalid status transition: {request.status} -> {new_status}")
+    actor = workflow_actor or workflow_actor_from_request_history(RequestHistoryActorType.INTERNAL_USER)
+    old_status = request.status
     event_type = RequestHistoryEventType.STATUS_CHANGED
     if new_status == RequestStatus.CLOSED:
         event_type = RequestHistoryEventType.CLOSED
@@ -388,7 +419,21 @@ def change_request_status(
         event_type = RequestHistoryEventType.CANCELLED
     elif request.status == RequestStatus.COMPLETED and new_status == RequestStatus.IN_PROGRESS:
         event_type = RequestHistoryEventType.REOPENED
-    apply_request_status(request, new_status, RequestHistoryActorType.INTERNAL_USER, event_type, comment=comment)
+
+    def apply_status_change() -> None:
+        apply_request_status(request, new_status, RequestHistoryActorType.INTERNAL_USER, event_type, comment=comment)
+
+    execute_request_status_transition(
+        db,
+        request,
+        old_status,
+        new_status,
+        actor,
+        apply_status_change,
+        comment=comment,
+        input_data={"action": "change_status", "old_status": old_status.value, "new_status": new_status.value},
+    )
+    synchronize_instance_from_request(db, request)
     if commit:
         db.commit()
         db.refresh(request)
@@ -441,6 +486,16 @@ def change_assignment_status(
 
     request = assignment.request
     old_request_status = request.status
+    workflow_actor = workflow_actor_from_request_history(actor_type, actor_id)
+    if actor_type == RequestHistoryActorType.CONTRACTOR_USER:
+        workflow_actor = WorkflowActor(
+            user=workflow_actor.user,
+            actor_id=actor_id,
+            actor_type=workflow_actor.actor_type,
+            permissions=workflow_actor.permissions,
+            scope={"contractor_ids": {assignment.contractor_id}},
+        )
+    ensure_instance_for_request(db, request)
     old_assignment_status = assignment.status
     assignment.status = new_status
     now = utc_now()
@@ -467,6 +522,20 @@ def change_assignment_status(
             "assignment_id": {"old": None, "new": str(assignment.id)},
         },
         comment=comment,
+    )
+    record_request_status_transition_after_change(
+        db,
+        request,
+        old_request_status,
+        workflow_actor,
+        comment=comment,
+        input_data={
+            "action": "assignment_status",
+            "assignment_id": str(assignment.id),
+            "assignment_status": new_status.value,
+            "old_request_status": old_request_status.value,
+            "new_request_status": request.status.value,
+        },
     )
     if commit:
         db.commit()
