@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { PlatformLogo } from '../../components/branding';
 import { Button, StatusBadge } from '../../components/design-system';
+import { APP_VERSION } from '../../config/version';
 import { useAuth } from '../../context/AuthContext';
 import { roleLabel } from './constants';
 
@@ -67,7 +68,7 @@ export function ContractorLayout({ children }: PropsWithChildren) {
               <Typography.Text>Текущая организация</Typography.Text>
               <strong>{primaryCompany ? 'Назначена' : 'Не назначена'}</strong>
               <StatusBadge label="Подключено" tone="success" />
-              <Typography.Text>Security Platform · v1.0</Typography.Text>
+              <Typography.Text>Security Platform · v{APP_VERSION}</Typography.Text>
             </>
           ) : (
             <span>SP</span>
