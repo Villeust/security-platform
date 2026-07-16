@@ -39,10 +39,20 @@ PERMISSIONS: dict[str, tuple[str, str | None]] = {
     "requests.comments.internal": ("Use internal request comments", None),
     "requests.attachments.internal": ("Use internal request attachments", None),
     "contractor.requests.view": ("View contractor requests", None),
+    "contractor.portal.view": ("View contractor portal", None),
+    "contractor.dashboard.view": ("View contractor dashboard", None),
     "contractor.requests.accept": ("Accept contractor assignments", None),
     "contractor.requests.update_status": ("Update contractor assignment status", None),
     "contractor.comments.create": ("Create contractor comments", None),
+    "contractor.comments.update_own": ("Update own contractor comments", None),
+    "contractor.comments.delete_own": ("Delete own contractor comments", None),
     "contractor.attachments.upload": ("Upload contractor attachments", None),
+    "contractor.attachments.delete_own": ("Delete own contractor attachments", None),
+    "contractor.work_results.upload": ("Upload contractor work results", None),
+    "contractor.profile.view": ("View contractor profile", None),
+    "contractor.company.view": ("View own contractor company", None),
+    "contractor.team.view": ("View own contractor team", None),
+    "contractor.notifications.view": ("View contractor notifications", None),
     "reference_data.view": ("View reference data", None),
     "reference_data.manage": ("Manage reference data", None),
 }
@@ -51,10 +61,20 @@ ALL_PERMISSION_CODES = set(PERMISSIONS)
 
 SECURITY_ADMIN_PERMISSIONS = ALL_PERMISSION_CODES - {
     "contractor.requests.view",
+    "contractor.portal.view",
+    "contractor.dashboard.view",
     "contractor.requests.accept",
     "contractor.requests.update_status",
     "contractor.comments.create",
+    "contractor.comments.update_own",
+    "contractor.comments.delete_own",
     "contractor.attachments.upload",
+    "contractor.attachments.delete_own",
+    "contractor.work_results.upload",
+    "contractor.profile.view",
+    "contractor.company.view",
+    "contractor.team.view",
+    "contractor.notifications.view",
 }
 
 SECURITY_OPERATOR_PERMISSIONS = {
@@ -70,10 +90,23 @@ SECURITY_OPERATOR_PERMISSIONS = {
 
 CONTRACTOR_PERMISSIONS = {
     "contractor.requests.view",
+    "contractor.portal.view",
+    "contractor.dashboard.view",
     "contractor.requests.accept",
     "contractor.requests.update_status",
     "contractor.comments.create",
+    "contractor.comments.update_own",
     "contractor.attachments.upload",
+    "contractor.work_results.upload",
+    "contractor.profile.view",
+    "contractor.notifications.view",
+}
+
+CONTRACTOR_MANAGER_PERMISSIONS = CONTRACTOR_PERMISSIONS | {
+    "contractor.comments.delete_own",
+    "contractor.attachments.delete_own",
+    "contractor.company.view",
+    "contractor.team.view",
 }
 
 VIEWER_PERMISSIONS = {
@@ -101,7 +134,7 @@ ROLE_PERMISSION_CODES: dict[str, set[str]] = {
     "PLATFORM_ADMIN": ALL_PERMISSION_CODES,
     "SECURITY_ADMIN": SECURITY_ADMIN_PERMISSIONS,
     "SECURITY_OPERATOR": SECURITY_OPERATOR_PERMISSIONS,
-    "CONTRACTOR_MANAGER": CONTRACTOR_PERMISSIONS,
+    "CONTRACTOR_MANAGER": CONTRACTOR_MANAGER_PERMISSIONS,
     "CONTRACTOR_USER": CONTRACTOR_PERMISSIONS,
     "VIEWER": VIEWER_PERMISSIONS,
 }

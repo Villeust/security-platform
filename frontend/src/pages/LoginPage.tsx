@@ -88,7 +88,8 @@ export function LoginPage() {
     try {
       const response = await auth.login(values);
       const destination = (location.state as LocationState | null)?.from?.pathname ?? '/';
-      navigate(response.must_change_password ? '/profile/change-password' : destination, { replace: true });
+      const authenticatedDestination = response.user.user_type === 'CONTRACTOR' && destination === '/' ? '/contractor' : destination;
+      navigate(response.must_change_password ? '/profile/change-password' : authenticatedDestination, { replace: true });
     } catch (caught) {
       setError(loginErrorMessage(caught));
     } finally {

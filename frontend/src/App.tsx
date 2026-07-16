@@ -1,7 +1,7 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import type { ReactNode } from 'react';
 
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { AdminAuditPage } from './features/admin/AdminAuditPage';
 import { AdminConnectionsPage } from './features/admin/AdminConnectionsPage';
@@ -16,6 +16,13 @@ import { AdminUsersPage } from './features/admin/AdminUsersPage';
 import { ContractorRequestCreatePage } from './features/contractor-requests/ContractorRequestCreatePage';
 import { ContractorRequestDetailPage } from './features/contractor-requests/ContractorRequestDetailPage';
 import { ContractorRequestsListPage } from './features/contractor-requests/ContractorRequestsListPage';
+import { ContractorDashboardPage } from './features/contractor-portal/ContractorDashboardPage';
+import { ContractorLayout } from './features/contractor-portal/ContractorLayout';
+import { ContractorNotificationsPage } from './features/contractor-portal/ContractorNotificationsPage';
+import { ContractorProfilePage } from './features/contractor-portal/ContractorProfilePage';
+import { ContractorRequestDetailPage as ContractorPortalRequestDetailPage } from './features/contractor-portal/ContractorRequestDetailPage';
+import { ContractorRequestsPage } from './features/contractor-portal/ContractorRequestsPage';
+import { ContractorTasksPage } from './features/contractor-portal/ContractorTasksPage';
 import { AppLayout } from './layouts/AppLayout';
 import { ApplicationsPage } from './pages/ApplicationsPage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
@@ -23,12 +30,13 @@ import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { LoginRoute, PasswordChangeRoute, PermissionRoute, ProtectedRoute } from './routes/ProtectedRoute';
+import { ContractorRoute, LoginRoute, PasswordChangeRoute, PermissionRoute, ProtectedRoute } from './routes/ProtectedRoute';
 
 function Shell({ children }: { children: ReactNode }) {
+  const auth = useAuth();
   return (
     <ProtectedRoute>
-      <AppLayout>{children}</AppLayout>
+      {auth.currentUser?.user_type === 'CONTRACTOR' ? <Navigate to="/contractor" replace /> : <AppLayout>{children}</AppLayout>}
     </ProtectedRoute>
   );
 }
@@ -36,6 +44,14 @@ function Shell({ children }: { children: ReactNode }) {
 function AdminShell({ children }: { children: ReactNode }) {
   return (
     <AdminLayout>{children}</AdminLayout>
+  );
+}
+
+function ContractorShell({ children }: { children: ReactNode }) {
+  return (
+    <ContractorRoute>
+      <ContractorLayout>{children}</ContractorLayout>
+    </ContractorRoute>
   );
 }
 
@@ -52,6 +68,12 @@ export function App() {
             <Route path="/applications/contractor-requests" element={<Shell><PermissionRoute permission="requests.view"><ContractorRequestsListPage /></PermissionRoute></Shell>} />
             <Route path="/applications/contractor-requests/new" element={<Shell><PermissionRoute permission="requests.create"><ContractorRequestCreatePage /></PermissionRoute></Shell>} />
             <Route path="/applications/contractor-requests/:requestId" element={<Shell><PermissionRoute permission="requests.view"><ContractorRequestDetailPage /></PermissionRoute></Shell>} />
+            <Route path="/contractor" element={<ContractorShell><ContractorDashboardPage /></ContractorShell>} />
+            <Route path="/contractor/requests" element={<ContractorShell><ContractorRequestsPage /></ContractorShell>} />
+            <Route path="/contractor/requests/:requestId" element={<ContractorShell><ContractorPortalRequestDetailPage /></ContractorShell>} />
+            <Route path="/contractor/tasks" element={<ContractorShell><ContractorTasksPage /></ContractorShell>} />
+            <Route path="/contractor/notifications" element={<ContractorShell><ContractorNotificationsPage /></ContractorShell>} />
+            <Route path="/contractor/profile" element={<ContractorShell><ContractorProfilePage /></ContractorShell>} />
             <Route path="/admin" element={<Shell><PermissionRoute anyPermission={['admin.dashboard.view', 'admin.contractors.view', 'admin.users.view', 'admin.roles.view', 'admin.audit.view', 'admin.system_status.view', 'admin.connections.view', 'admin.notifications.view']}><AdminShell><AdminDashboardPage /></AdminShell></PermissionRoute></Shell>} />
             <Route path="/admin/contractors" element={<Shell><PermissionRoute permission="admin.contractors.view"><AdminShell><AdminContractorsPage /></AdminShell></PermissionRoute></Shell>} />
             <Route path="/admin/users" element={<Shell><PermissionRoute permission="admin.users.view"><AdminShell><AdminUsersPage /></AdminShell></PermissionRoute></Shell>} />
