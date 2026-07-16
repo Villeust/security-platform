@@ -11,6 +11,8 @@ from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session, aliased, selectinload
 
 from app.api.deps import get_current_permissions, require_csrf, require_permission
+from app.core.config import settings
+from app.core.query import validate_search, validate_sort
 from app.db.session import get_db
 from app.models.admin import AdminAuditLog, Permission, User
 from app.models.reference_data import utc_now
@@ -82,7 +84,7 @@ from app.services.workflow_definition_service import (
 )
 from app.scripts.platform_doctor import ERROR, WARNING, run_doctor
 
-router = APIRouter(prefix="/admin/workflow-center", tags=["admin workflow center"])
+router = APIRouter(prefix="/admin/workflow-center", tags=["admin workflow center"], dependencies=[Depends(require_csrf)])
 
 
 def duration_label(minutes: int | None) -> str | None:
@@ -386,9 +388,9 @@ def serialize_timer(timer: WorkflowSlaTimer, policy: WorkflowSlaPolicy | None = 
 
 
 def serialize_outbox(event: DomainEventOutbox, business_id: str | None = None) -> WorkflowOutboxDto:
-    correlation_id = None
+    correlation_id = event.correlation_id
     if isinstance(event.payload, dict):
-        correlation_id = event.payload.get("correlation_id")
+        correlation_id = correlation_id or event.payload.get("correlation_id")
     return WorkflowOutboxDto(
         id=event.id,
         event_type=event.event_type,
@@ -460,17 +462,18 @@ def workflow_dashboard(db: Session = Depends(get_db), _: User = Depends(require_
 
 @router.get("/definitions", response_model=WorkflowDefinitionListResponse)
 def list_definitions(
-    search: str | None = None,
+    search: str | None = Query(default=None, max_length=settings.max_search_length),
     entity_type: str | None = None,
     published: bool | None = None,
     active: bool | None = None,
     sort: str = "updated_at",
-    direction: str = "desc",
-    skip: int = 0,
+    direction: str = Query(default="desc", pattern="^(asc|desc)$"),
+    skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, le=200),
     db: Session = Depends(get_db),
     _: User = Depends(require_permission("workflows.view")),
 ) -> WorkflowDefinitionListResponse:
+    search = validate_search(search)
     query = select(WorkflowDefinition)
     count_query = select(func.count()).select_from(WorkflowDefinition)
     filters = []
@@ -486,8 +489,18 @@ def list_definitions(
     for item in filters:
         query = query.where(item)
         count_query = count_query.where(item)
-    sort_column = getattr(WorkflowDefinition, sort, WorkflowDefinition.updated_at)
-    query = query.order_by(desc(sort_column) if direction == "desc" else sort_column).offset(skip).limit(limit)
+    sort_column, sort_direction = validate_sort(
+        sort,
+        direction,
+        {
+            "updated_at": WorkflowDefinition.updated_at,
+            "created_at": WorkflowDefinition.created_at,
+            "code": WorkflowDefinition.code,
+            "name": WorkflowDefinition.name,
+            "version": WorkflowDefinition.version,
+        },
+    )
+    query = query.order_by(desc(sort_column) if sort_direction == "desc" else sort_column).offset(skip).limit(limit)
     counts = definition_counts(db)
     return WorkflowDefinitionListResponse(
         items=[serialize_definition_list_item(item, counts) for item in db.scalars(query).all()],
@@ -654,15 +667,16 @@ def version_diff(source_id: UUID, target_id: UUID, db: Session = Depends(get_db)
 
 @router.get("/instances", response_model=WorkflowInstanceListResponse)
 def list_instances(
-    search: str | None = None,
+    search: str | None = Query(default=None, max_length=settings.max_search_length),
     workflow_code: str | None = None,
     state_code: str | None = None,
     active: bool | None = None,
-    skip: int = 0,
+    skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, le=200),
     db: Session = Depends(get_db),
     _: User = Depends(require_permission("workflows.instances.view")),
 ) -> WorkflowInstanceListResponse:
+    search = validate_search(search)
     query = instance_query()
     count_query = select(func.count()).select_from(WorkflowInstance).join(WorkflowDefinition).join(WorkflowState, WorkflowState.id == WorkflowInstance.current_state_id).outerjoin(ContractorRequest, ContractorRequest.id == WorkflowInstance.entity_id)
     filters = []
@@ -753,7 +767,8 @@ def sla_center(db: Session = Depends(get_db), _: User = Depends(require_permissi
 
 
 @router.get("/outbox", response_model=OutboxMonitorResponse)
-def outbox_monitor(status: str | None = None, search: str | None = None, skip: int = 0, limit: int = Query(default=50, le=200), db: Session = Depends(get_db), _: User = Depends(require_permission("workflows.instances.view"))) -> OutboxMonitorResponse:
+def outbox_monitor(status: str | None = None, search: str | None = Query(default=None, max_length=settings.max_search_length), skip: int = Query(default=0, ge=0), limit: int = Query(default=50, le=200), db: Session = Depends(get_db), _: User = Depends(require_permission("workflows.instances.view"))) -> OutboxMonitorResponse:
+    search = validate_search(search)
     query = select(DomainEventOutbox).order_by(desc(DomainEventOutbox.created_at))
     count_query = select(func.count()).select_from(DomainEventOutbox)
     filters = []
@@ -785,7 +800,7 @@ def outbox_monitor(status: str | None = None, search: str | None = None, skip: i
 
 
 @router.get("/audit", response_model=ProcessAuditResponse)
-def process_audit(action: str | None = None, workflow: str | None = None, skip: int = 0, limit: int = Query(default=50, le=200), db: Session = Depends(get_db), _: User = Depends(require_permission("workflows.view"))) -> ProcessAuditResponse:
+def process_audit(action: str | None = None, workflow: str | None = None, skip: int = Query(default=0, ge=0), limit: int = Query(default=50, le=200), db: Session = Depends(get_db), _: User = Depends(require_permission("workflows.view"))) -> ProcessAuditResponse:
     query = select(AdminAuditLog).where(AdminAuditLog.action.like("WORKFLOW_%")).order_by(desc(AdminAuditLog.created_at))
     count_query = select(func.count()).select_from(AdminAuditLog).where(AdminAuditLog.action.like("WORKFLOW_%"))
     if action:
@@ -902,7 +917,7 @@ def export_definition(definition_id: UUID, format: str = Query(default="json", p
 
 
 @router.get("/search", response_model=WorkflowSearchResponse)
-def workflow_search(q: str = Query(min_length=2), db: Session = Depends(get_db), _: User = Depends(require_permission("workflows.view"))) -> WorkflowSearchResponse:
+def workflow_search(q: str = Query(min_length=2, max_length=settings.max_search_length), db: Session = Depends(get_db), _: User = Depends(require_permission("workflows.view"))) -> WorkflowSearchResponse:
     pattern = f"%{q}%"
     items: list[WorkflowSearchResult] = []
     for definition in db.scalars(select(WorkflowDefinition).where(or_(WorkflowDefinition.code.ilike(pattern), WorkflowDefinition.name.ilike(pattern))).limit(10)).all():

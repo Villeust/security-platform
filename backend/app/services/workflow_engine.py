@@ -7,6 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.correlation import get_correlation_id
 from app.models.reference_data import utc_now
 from app.models.workflow import (
     DomainEventOutbox,
@@ -274,7 +275,7 @@ def execute_transition_with_callback(
         reason_code=reason_code,
         input_data=safe_json(input_data),
         safe_result_data=safe_json(result),
-        correlation_id=idempotency_key,
+        correlation_id=get_correlation_id() or idempotency_key,
     )
     instance.current_state_id = transition.to_state_id
     instance.lock_version += 1
@@ -347,7 +348,7 @@ def record_external_transition(
         reason_code=reason_code,
         input_data=safe_json(input_data),
         safe_result_data=safe_json(safe_result_data),
-        correlation_id=idempotency_key,
+        correlation_id=get_correlation_id() or idempotency_key,
     )
     instance.current_state_id = transition.to_state_id
     instance.lock_version += 1
@@ -430,7 +431,15 @@ def scrub_safe_value(key: str, value, forbidden: set[str]):
 
 
 def add_outbox(db: Session, event_type: DomainEventType, instance: WorkflowInstance, payload: dict) -> None:
-    db.add(DomainEventOutbox(event_type=event_type.value, aggregate_type=instance.entity_type, aggregate_id=instance.entity_id, payload=safe_json(payload) or {}))
+    db.add(
+        DomainEventOutbox(
+            event_type=event_type.value,
+            aggregate_type=instance.entity_type,
+            aggregate_id=instance.entity_id,
+            payload=safe_json(payload) or {},
+            correlation_id=get_correlation_id(),
+        )
+    )
 
 
 def create_sla_timers(db: Session, instance: WorkflowInstance, state_id: UUID | None, transition_id: UUID | None, now) -> None:
@@ -471,6 +480,14 @@ def mark_breached_sla_timers(db: Session, now) -> int:
     for timer in timers:
         timer.status = WorkflowSlaStatus.BREACHED
         timer.breached_at = now
-        db.add(DomainEventOutbox(event_type=DomainEventType.SLA_BREACHED.value, aggregate_type="WorkflowSlaTimer", aggregate_id=timer.id, payload={"workflow_instance_id": str(timer.workflow_instance_id)}))
+        db.add(
+            DomainEventOutbox(
+                event_type=DomainEventType.SLA_BREACHED.value,
+                aggregate_type="WorkflowSlaTimer",
+                aggregate_id=timer.id,
+                payload={"workflow_instance_id": str(timer.workflow_instance_id)},
+                correlation_id=get_correlation_id(),
+            )
+        )
     db.flush()
     return len(timers)

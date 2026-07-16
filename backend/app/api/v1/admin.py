@@ -8,7 +8,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.api.deps import get_current_user_stub, require_permission
+from app.api.deps import get_current_user_stub, require_csrf, require_permission
 from app.db.session import get_db
 from app.models.admin import AdminAuditLog, AdminNotification, AdminNotificationSeverity, AdminNotificationType, AuthSource, LockReason, Permission, Role, User, UserType
 from app.models.reference_data import City, Contractor, ContractorResponsibility, Facility, Premise, WorkType, utc_now
@@ -78,7 +78,7 @@ from app.services.auth_service import revoke_all_sessions, set_temporary_passwor
 from app.services.notification_service import create_notification, list_notifications, mark_read, resolve_notification
 from app.services.password_service import generate_temporary_password
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_csrf)])
 
 
 def json_safe(value: Any) -> Any:
@@ -210,7 +210,7 @@ def get_admin_system_status(
 def admin_list_contractors(
     db: Session = Depends(get_db),
     _: User = Depends(require_permission("admin.contractors.view")),
-    search: str | None = None,
+    search: str | None = Query(default=None, max_length=settings.max_search_length),
     is_active: bool | None = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
@@ -247,7 +247,7 @@ def admin_activate_contractor(item_id: UUID, db: Session = Depends(get_db), _: U
 def admin_list_users(
     db: Session = Depends(get_db),
     _: User = Depends(require_permission("admin.users.view")),
-    search: str | None = None,
+    search: str | None = Query(default=None, max_length=settings.max_search_length),
     user_type: UserType | None = None,
     role_id: UUID | None = None,
     contractor_id: UUID | None = None,
@@ -357,7 +357,7 @@ def admin_set_user_contractors(item_id: UUID, payload: UserContractorsUpdate, db
 def admin_list_roles(
     db: Session = Depends(get_db),
     _: User = Depends(require_permission("admin.roles.view")),
-    search: str | None = None,
+    search: str | None = Query(default=None, max_length=settings.max_search_length),
     is_active: bool | None = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
@@ -513,7 +513,7 @@ def apply_admin_filters(query: Select[tuple[Any]], model: type[Any], search: str
 
 
 @router.get("/cities", response_model=list[CityResponse])
-def admin_list_cities(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = None, is_active: bool | None = None, skip: int = 0, limit: int = 100) -> list[City]:
+def admin_list_cities(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = Query(default=None, max_length=settings.max_search_length), is_active: bool | None = None, skip: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100)) -> list[City]:
     return list(db.scalars(apply_admin_filters(select(City), City, search, is_active).order_by(City.name).offset(skip).limit(limit)).all())
 
 
@@ -528,7 +528,7 @@ def admin_update_city(item_id: UUID, payload: CityUpdate, db: Session = Depends(
 
 
 @router.get("/facilities", response_model=list[FacilityResponse])
-def admin_list_facilities(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = None, is_active: bool | None = None, city_id: UUID | None = None, skip: int = 0, limit: int = 100) -> list[Facility]:
+def admin_list_facilities(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = Query(default=None, max_length=settings.max_search_length), is_active: bool | None = None, city_id: UUID | None = None, skip: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100)) -> list[Facility]:
     query = apply_admin_filters(select(Facility), Facility, search, is_active)
     if city_id is not None:
         query = query.where(Facility.city_id == city_id)
@@ -546,7 +546,7 @@ def admin_update_facility(item_id: UUID, payload: FacilityUpdate, db: Session = 
 
 
 @router.get("/premises", response_model=list[PremiseResponse])
-def admin_list_premises(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = None, is_active: bool | None = None, facility_id: UUID | None = None, skip: int = 0, limit: int = 100) -> list[Premise]:
+def admin_list_premises(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = Query(default=None, max_length=settings.max_search_length), is_active: bool | None = None, facility_id: UUID | None = None, skip: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100)) -> list[Premise]:
     query = select(Premise)
     if search:
         query = query.where(Premise.name.ilike(f"%{search}%"))
@@ -568,7 +568,7 @@ def admin_update_premise(item_id: UUID, payload: PremiseUpdate, db: Session = De
 
 
 @router.get("/work-types", response_model=list[WorkTypeResponse])
-def admin_list_work_types(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = None, is_active: bool | None = None, skip: int = 0, limit: int = 100) -> list[WorkType]:
+def admin_list_work_types(db: Session = Depends(get_db), _: User = Depends(require_permission("reference_data.manage")), search: str | None = Query(default=None, max_length=settings.max_search_length), is_active: bool | None = None, skip: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100)) -> list[WorkType]:
     return list(db.scalars(apply_admin_filters(select(WorkType), WorkType, search, is_active).order_by(WorkType.name).offset(skip).limit(limit)).all())
 
 
@@ -591,8 +591,8 @@ def admin_list_responsibilities(
     facility_id: UUID | None = None,
     work_type_id: UUID | None = None,
     is_active: bool | None = None,
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
 ) -> list[ContractorResponsibility]:
     query = select(ContractorResponsibility)
     for column, value in (

@@ -111,6 +111,7 @@ def require_csrf(
     request: Request,
     x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
     x_user_id: UUID | None = Header(default=None),
+    x_user_role: str | None = Header(default=None),
     x_contractor_id: UUID | None = Header(default=None),
     csrf_cookie: str | None = Cookie(default=None, alias=settings.auth_csrf_cookie_name),
     access_cookie: str | None = Cookie(default=None, alias=settings.auth_access_cookie_name),
@@ -119,13 +120,20 @@ def require_csrf(
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
     session = session_from_access_cookie(db, access_cookie)
-    if session is None and dev_auth_enabled() and (x_user_id is not None or x_contractor_id is not None):
+    dev_role_bypass = x_user_role is not None and (
+        not request.url.path.startswith(f"{settings.api_v1_prefix}/admin/workflow-center") or x_user_role != "PLATFORM_ADMIN"
+    )
+    if session is None and dev_auth_enabled() and (x_user_id is not None or x_contractor_id is not None or dev_role_bypass):
         return
     if session is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication is required")
     if not x_csrf_token or not csrf_cookie or x_csrf_token != csrf_cookie:
+        write_audit(db, "CSRF_REJECTED", "Request", None, actor_id=session.user_id, actor_type="SECURITY", new_data={"path": request.url.path})
+        db.commit()
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF_TOKEN_INVALID")
     if token_hash(x_csrf_token) != session.csrf_token_hash:
+        write_audit(db, "CSRF_REJECTED", "Request", None, actor_id=session.user_id, actor_type="SECURITY", new_data={"path": request.url.path})
+        db.commit()
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF_TOKEN_INVALID")
 
 

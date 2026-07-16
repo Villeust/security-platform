@@ -234,6 +234,7 @@ class AdminAuditLogResponse(BaseModel):
     created_at: datetime
     ip_address: str | None
     user_agent: str | None
+    correlation_id: str | None = None
 
 
 class AdminNotificationResponse(BaseModel):

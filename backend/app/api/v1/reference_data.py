@@ -7,7 +7,8 @@ from sqlalchemy import Select, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_permission
+from app.api.deps import require_csrf, require_permission
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.admin import User
 from app.models.reference_data import (
@@ -39,7 +40,7 @@ from app.schemas.reference_data import (
     WorkTypeUpdate,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_csrf)])
 
 
 def get_object_or_404(db: Session, model: type[Any], item_id: UUID) -> Any:
@@ -168,7 +169,7 @@ def list_cities(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, min_length=1),
+    search: str | None = Query(default=None, min_length=1, max_length=settings.max_search_length),
 ) -> Sequence[City]:
     query = apply_common_filters(select(City), City, is_active, search)
     return list_records(db, query, skip, limit)
@@ -213,7 +214,7 @@ def list_facilities(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, min_length=1),
+    search: str | None = Query(default=None, min_length=1, max_length=settings.max_search_length),
     city_id: UUID | None = Query(default=None),
 ) -> Sequence[Facility]:
     query = apply_common_filters(select(Facility), Facility, is_active, search)
@@ -259,7 +260,7 @@ def list_premises(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, min_length=1),
+    search: str | None = Query(default=None, min_length=1, max_length=settings.max_search_length),
     facility_id: UUID | None = Query(default=None),
 ) -> Sequence[Premise]:
     query = select(Premise)
@@ -307,7 +308,7 @@ def list_contractors(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, min_length=1),
+    search: str | None = Query(default=None, min_length=1, max_length=settings.max_search_length),
 ) -> Sequence[Contractor]:
     query = apply_common_filters(select(Contractor), Contractor, is_active, search)
     return list_records(db, query, skip, limit)
@@ -347,7 +348,7 @@ def list_work_types(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     is_active: bool | None = Query(default=None),
-    search: str | None = Query(default=None, min_length=1),
+    search: str | None = Query(default=None, min_length=1, max_length=settings.max_search_length),
 ) -> Sequence[WorkType]:
     query = apply_common_filters(select(WorkType), WorkType, is_active, search)
     return list_records(db, query, skip, limit)

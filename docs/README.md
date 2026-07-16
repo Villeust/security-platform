@@ -10,6 +10,10 @@
 | [API Guidelines](API_GUIDELINES.md) | Корпоративные правила разработки REST API. |
 | [Development Guide](DEVELOPMENT.md) | Локальный запуск, тесты, seed, Git Flow и Pull Request-процесс. |
 
+Additional operational reference:
+
+- [Security](SECURITY.md) covers security headers, CORS, CSRF, cookies, limits, production validation and operational hardening.
+
 ## Images and Diagrams
 
 | Файл | Назначение |

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_permission
+from app.api.deps import require_csrf, require_permission
 from app.db.session import get_db
 from app.models.admin import AuthGroupMapping, ConnectionConfiguration, ConnectionEventLog, ConnectionEventStatus, ConnectionProviderType, DirectoryGroup, User
 from app.schemas.connections import (
@@ -22,7 +22,7 @@ from app.schemas.connections import (
 )
 from app.services.connection_service import create_mapping, import_directory_groups, test_config, upsert_config
 
-router = APIRouter(prefix="/admin", tags=["connections"])
+router = APIRouter(prefix="/admin", tags=["connections"], dependencies=[Depends(require_csrf)])
 
 
 def provider_response(item: ConnectionConfiguration | None, provider_type: ConnectionProviderType) -> ConnectionConfigurationResponse:

@@ -60,9 +60,9 @@ List endpoints should support pagination before datasets become large.
 Recommended parameters:
 
 - `limit`
-- `offset`
+- `skip`
 
-Responses should remain predictable and should not expose unbounded datasets by default.
+`skip` must be non-negative. `limit` must have a server-side maximum. Responses should remain predictable and should not expose unbounded datasets by default.
 
 ## Filtering
 
@@ -75,19 +75,33 @@ Examples:
 - `status`
 - `is_active`
 
+Search parameters must have bounded length. Sort fields must use an explicit allowlist and must not be mapped from arbitrary ORM attribute names.
+
 ## Error Responses
 
 Error responses should be structured, stable and useful for frontend handling.
 
-Recommended shape:
+Current standard shape:
 
 ```json
 {
-  "detail": "Human-readable error message"
+  "error": {
+    "code": "RESOURCE_NOT_FOUND",
+    "message": "Запрошенный ресурс не найден.",
+    "details": null
+  },
+  "correlation_id": "uuid",
+  "timestamp": "2026-07-17T00:00:00+00:00",
+  "path": "/api/v1/example",
+  "detail": "Legacy-compatible detail"
 }
 ```
 
-When a module needs richer errors, introduce a consistent extended shape rather than ad hoc responses.
+`detail` is preserved for backward compatibility. New frontend code should prefer `error.code` and `correlation_id`.
+
+## Security
+
+Cookie-authenticated mutation endpoints must include CSRF protection unless they are documented exemptions such as login and refresh. File downloads must use safe attachment disposition, `nosniff`, and no filesystem path leakage. Oversized requests return `413` using the standard error shape.
 
 ## Versioning
 

@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.core.correlation import get_correlation_id
 from app.models.admin import AdminAuditLog
 
 SYSTEM_ADMIN_STUB = "SYSTEM_ADMIN_STUB"
@@ -29,6 +30,7 @@ def write_audit(
         new_data=new_data,
         ip_address=ip_address,
         user_agent=user_agent,
+        correlation_id=get_correlation_id(),
     )
     db.add(log)
     return log

@@ -1,3 +1,3 @@
-import packageInfo from '../../package.json';
+import platformVersion from '../../../VERSION?raw';
 
-export const APP_VERSION = packageInfo.version;
+export const APP_VERSION = platformVersion.trim();
