@@ -18,7 +18,7 @@ export {
 export type { DashboardTone } from './Dashboard';
 export { EmptyState } from './EmptyState';
 export { ErrorState } from './ErrorState';
-export { Loader } from './Loader';
+export { ButtonLoader, InlineLoader, Loader, LoadingSkeleton as LoaderSkeleton, PageLoader } from './Loader';
 export { PageHeader } from './PageHeader';
 export {
   ActionCard,

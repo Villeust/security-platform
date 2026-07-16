@@ -1,10 +1,11 @@
 import { SaveOutlined, SendOutlined } from '@ant-design/icons';
 import { DatePicker, Form, Input, Select, message } from 'antd';
-import axios from 'axios';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Button, Card, ErrorState, Loader, PageHeader, Section } from '../../components/design-system';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { notifyApiError } from '../../lib/toast';
 import { useReferenceData } from './hooks/useReferenceData';
 import { createRequest } from './services/requestService';
 import type { RequestFormValues, Uuid } from './types/api';
@@ -28,6 +29,7 @@ export function ContractorRequestCreatePage() {
   const selectedFacilityId = Form.useWatch('facility_id', form);
   const selectedPremiseId = Form.useWatch('premise_id', form);
   const selectedWorkTypeIds = Form.useWatch('work_type_ids', form) ?? [];
+  const submitAction = useAsyncAction(submit);
 
   const filteredFacilities = useMemo(
     () => referenceData.facilities.filter((facility) => !selectedCityId || facility.city_id === selectedCityId),
@@ -73,17 +75,13 @@ export function ContractorRequestCreatePage() {
       navigate(`/applications/contractor-requests/${created.id}`);
     } catch (error: unknown) {
       console.error('Failed to create contractor request', error);
-      if (axios.isAxiosError(error)) {
-        message.error(error.response?.data?.detail ?? 'Backend отклонил заявку.');
-        return;
-      }
-      message.error('Не удалось создать заявку.');
+      notifyApiError(error, 'Не удалось создать заявку.');
     }
   }
 
   async function saveDraft() {
     const requiredDraftValues = await form.validateFields(['title', 'description']);
-    await submit({ ...form.getFieldsValue(), ...requiredDraftValues } as RequestFormValues, true);
+    await submitAction.run({ ...form.getFieldsValue(), ...requiredDraftValues } as RequestFormValues, true);
   }
 
   if (referenceData.isLoading) {
@@ -99,7 +97,7 @@ export function ContractorRequestCreatePage() {
       <PageHeader title="Новая заявка подрядчику" description="Создайте черновик или сразу отправьте заявку в workflow." />
       <Section>
         <Card>
-          <Form<RequestFormValues> form={form} layout="vertical" onFinish={(values) => submit(values, false)} className="cr-form">
+          <Form<RequestFormValues> form={form} layout="vertical" onFinish={(values) => submitAction.run(values, false)} className="cr-form">
             <Form.Item name="title" label="Заголовок" rules={[{ required: true, message: 'Введите заголовок' }]}>
               <Input />
             </Form.Item>
@@ -165,10 +163,10 @@ export function ContractorRequestCreatePage() {
               <DatePicker className="cr-date-picker" />
             </Form.Item>
             <div className="cr-form-actions">
-              <Button icon={<SaveOutlined />} onClick={saveDraft}>
+              <Button icon={<SaveOutlined />} loading={submitAction.loading} onClick={saveDraft}>
                 Сохранить черновик
               </Button>
-              <Button type="primary" htmlType="submit" icon={<SendOutlined />}>
+              <Button type="primary" htmlType="submit" loading={submitAction.loading} icon={<SendOutlined />}>
                 Создать и отправить
               </Button>
             </div>
