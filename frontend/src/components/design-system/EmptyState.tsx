@@ -1,16 +1,19 @@
 import { Empty } from 'antd';
 
 type EmptyStateProps = {
+  icon?: React.ReactNode;
   title: string;
   description?: string;
   action?: React.ReactNode;
+  primaryAction?: React.ReactNode;
+  secondaryAction?: React.ReactNode;
 };
 
-export function EmptyState({ title, description, action }: EmptyStateProps) {
+export function EmptyState({ icon, title, description, action, primaryAction, secondaryAction }: EmptyStateProps) {
   return (
     <Empty
       className="sp-empty-state"
-      image={Empty.PRESENTED_IMAGE_SIMPLE}
+      image={icon ?? Empty.PRESENTED_IMAGE_SIMPLE}
       description={
         <span>
           <strong>{title}</strong>
@@ -18,7 +21,8 @@ export function EmptyState({ title, description, action }: EmptyStateProps) {
         </span>
       }
     >
-      {action}
+      {action ?? primaryAction}
+      {secondaryAction}
     </Empty>
   );
 }

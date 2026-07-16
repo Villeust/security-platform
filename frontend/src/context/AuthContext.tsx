@@ -9,6 +9,7 @@ import {
   logout as logoutRequest,
 } from '../features/admin/services/adminService';
 import type { AdminUser, LoginResponse, Uuid } from '../features/admin/types';
+import { parseApiError } from '../lib/apiError';
 import { setDevUserHeader } from '../services/api';
 
 const DEV_USER_STORAGE_KEY = 'security-platform.devUserId';
@@ -45,13 +46,7 @@ function statusForUser(user: AdminUser): AuthStatus {
 }
 
 function authErrorMessage(error: unknown) {
-  if (!isAxiosError(error) || !error.response) {
-    return 'Сервис авторизации недоступен. Проверьте подключение к backend.';
-  }
-  if (error.response.status >= 500) {
-    return 'Сервис авторизации временно недоступен. Попробуйте позже.';
-  }
-  return 'Сессия устарела. Выполните вход повторно.';
+  return parseApiError(error).message;
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {

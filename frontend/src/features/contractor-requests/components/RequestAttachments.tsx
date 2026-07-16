@@ -4,6 +4,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useState } from 'react';
 
 import { Button, EmptyState, Loader } from '../../../components/design-system';
+import { notifyApiError } from '../../../lib/toast';
 import { attachmentDownloadUrl, deleteAttachment, getAttachments, uploadAttachment, type CollaborationMode } from '../services/collaborationService';
 import type { RequestAttachment, RequestAttachmentCategory, RequestVisibility, Uuid } from '../types/api';
 import { formatDate } from '../utils';
@@ -31,7 +32,7 @@ export function RequestAttachments({ requestId, mode, assignmentId = null, categ
       setAttachments(category ? data.filter((attachment) => attachment.category === category && attachment.assignment_id === assignmentId) : data);
     } catch (error) {
       console.error('Failed to load attachments', error);
-      message.error('Не удалось загрузить вложения.');
+      notifyApiError(error, 'Не удалось загрузить вложения.');
     } finally {
       setIsLoading(false);
     }
@@ -49,14 +50,7 @@ export function RequestAttachments({ requestId, mode, assignmentId = null, categ
       await reload();
     } catch (error: unknown) {
       console.error('Failed to upload attachment', error);
-      const status = typeof error === 'object' && error !== null && 'response' in error ? (error as { response?: { status?: number } }).response?.status : undefined;
-      if (status === 413) {
-        message.error('Файл слишком большой.');
-      } else if (status === 415) {
-        message.error('Тип файла не разрешен.');
-      } else {
-        message.error('Не удалось загрузить файл.');
-      }
+      notifyApiError(error, 'Не удалось загрузить файл.');
     } finally {
       setIsUploading(false);
     }
@@ -68,7 +62,7 @@ export function RequestAttachments({ requestId, mode, assignmentId = null, categ
       await reload();
     } catch (error) {
       console.error('Failed to delete attachment', error);
-      message.error('Не удалось удалить вложение.');
+      notifyApiError(error, 'Не удалось удалить вложение.');
     }
   }
 

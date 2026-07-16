@@ -1,6 +1,8 @@
 import axios from 'axios';
 
 import { appConfig } from '../config';
+import { parseApiError } from '../lib/apiError';
+import { setLastCorrelationId } from '../lib/correlation';
 
 const DEV_USER_HEADER = 'X-User-Id';
 
@@ -41,17 +43,31 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    setLastCorrelationId(response.headers['x-correlation-id']);
+    return response;
+  },
   async (error) => {
+    setLastCorrelationId(error.response?.headers?.['x-correlation-id']);
     const original = error.config;
     if (error.response?.status !== 401 || original?._retry || original?.url?.includes('/auth/login') || original?.url?.includes('/auth/refresh')) {
+      error.normalized = parseApiError(error);
       return Promise.reject(error);
     }
     original._retry = true;
     refreshing ??= api.post('/api/v1/auth/refresh').then(() => undefined).finally(() => {
       refreshing = null;
     });
-    await refreshing;
-    return api(original);
+    try {
+      await refreshing;
+      return api(original);
+    } catch (refreshError) {
+      error.normalized = parseApiError(refreshError);
+      return Promise.reject(error);
+    }
   },
 );
+
+export function withAbort(signal?: AbortSignal) {
+  return signal ? { signal } : undefined;
+}
