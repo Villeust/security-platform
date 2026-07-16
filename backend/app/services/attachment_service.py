@@ -3,10 +3,12 @@ from pathlib import Path, PurePath
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.security import safe_download_headers
 from app.models.requests import (
     ContractorRequest,
     RequestAssignment,
@@ -19,6 +21,7 @@ from app.models.requests import (
 from app.services.request_service import add_history
 
 MAX_ATTACHMENT_SIZE_BYTES = 20 * 1024 * 1024
+MAX_SAFE_FILENAME_LENGTH = 255
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "pdf", "doc", "docx", "xls", "xlsx", "txt", "zip"}
 ALLOWED_MIME_TYPES = {
     "image/jpeg",
@@ -45,6 +48,8 @@ def storage_root() -> Path:
 def validate_original_filename(filename: str | None) -> tuple[str, str]:
     if not filename:
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Filename is required")
+    if len(filename) > MAX_SAFE_FILENAME_LENGTH or any(char in filename for char in "\r\n\t"):
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Invalid filename")
     pure = PurePath(filename)
     if pure.name != filename or ".." in pure.parts:
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Invalid filename")
@@ -103,7 +108,7 @@ async def save_upload_to_storage(request: ContractorRequest, attachment_id: UUID
     with target_path.open("wb") as destination:
         while chunk := await upload.read(1024 * 1024):
             size += len(chunk)
-            if size > MAX_ATTACHMENT_SIZE_BYTES:
+            if size > min(MAX_ATTACHMENT_SIZE_BYTES, settings.max_upload_file_bytes):
                 destination.close()
                 target_path.unlink(missing_ok=True)
                 raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File is too large")
@@ -201,6 +206,15 @@ def attachment_file_path(attachment: RequestAttachment) -> Path:
     if not str(path).startswith(str(root)) or not path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment file not found")
     return path
+
+
+def attachment_download_response(attachment: RequestAttachment) -> FileResponse:
+    return FileResponse(
+        attachment_file_path(attachment),
+        media_type=attachment.mime_type,
+        filename=attachment.original_filename,
+        headers=safe_download_headers(),
+    )
 
 
 def ensure_contractor_can_access_attachment(attachment: RequestAttachment) -> None:

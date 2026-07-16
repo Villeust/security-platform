@@ -19,7 +19,7 @@ Use the platform start script from the repository root:
 .\start-dev.cmd
 ```
 
-The script checks required tooling, verifies ports, prepares dependencies, runs migrations and starts backend and frontend services.
+The script checks required tooling, detects stale runtime state, verifies ports, prepares dependencies, runs migrations, runs Platform Doctor, starts backend and frontend services, verifies readiness/health/version/frontend reachability, and prints a versioned startup banner.
 
 Before launching backend and frontend processes, `scripts/start-dev.ps1` runs Platform Doctor. Startup continues when Doctor reports warnings only. If Doctor reports errors, startup aborts unless `-Force` is supplied.
 
@@ -37,6 +37,8 @@ powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -Seed
 .\stop-dev.cmd
 ```
 
+The stop script only terminates processes verified as belonging to the current project by saved PID metadata or command line ownership. It reports PID, command line, start time, port and project ownership for remaining blockers. If Windows denies termination, it keeps the process untouched and prints diagnostics instead of hiding the problem.
+
 ## Swagger
 
 After startup, Swagger is available at:
@@ -44,6 +46,8 @@ After startup, Swagger is available at:
 ```text
 http://127.0.0.1:8000/docs
 ```
+
+Development CSP explicitly allows Swagger assets and local Vite websocket connections. Production CSP is stricter; see `docs/SECURITY.md`.
 
 ## Tests
 
@@ -57,9 +61,35 @@ uv run pytest
 
 Frontend checks depend on the scripts configured in `frontend/package.json`.
 
+## Security Configuration
+
+Development uses explicit localhost CORS origins and non-secure cookies. Production must set approved HTTPS origins, non-placeholder secrets, and secure cookie/HSTS settings.
+
+Common security variables:
+
+- `BACKEND_CORS_ORIGINS`
+- `AUTH_TOKEN_SECRET`
+- `CONNECTION_SECRETS_KEY`
+- `AUTH_COOKIE_SAMESITE`
+- `AUTH_COOKIE_PATH`
+- `AUTH_COOKIE_DOMAIN`
+- `PUBLIC_BASE_URL`
+- `HSTS_ENABLED`
+- `MAX_REQUEST_BODY_BYTES`
+- `MAX_JSON_BODY_BYTES`
+- `MAX_MULTIPART_BODY_BYTES`
+- `MAX_UPLOAD_FILE_BYTES`
+- `MAX_FILES_PER_REQUEST`
+- `DEFAULT_PAGE_LIMIT`
+- `MAX_PAGE_LIMIT`
+- `MAX_SEARCH_LENGTH`
+- `APP_DEBUG`
+
+Reverse proxies should enforce matching upload/body limits before requests reach the backend.
+
 ## Platform Doctor
 
-Platform Doctor verifies the local development environment before startup and after upgrades.
+Platform Doctor 2.0 verifies the local development environment before startup and after upgrades. It returns high-level categories for operators and detailed diagnostics for developers.
 
 Run from the `backend` directory:
 
@@ -71,6 +101,12 @@ Machine-readable output:
 
 ```bash
 uv run python -m app.scripts.platform_doctor --json
+```
+
+Summary output:
+
+```bash
+uv run python -m app.scripts.platform_doctor --summary
 ```
 
 Verbose text output without ANSI colors:
@@ -89,6 +125,10 @@ uv run python -m app.scripts.platform_doctor --fix
 
 Doctor checks:
 
+- Core: platform version, database, Alembic, Workflow Engine, RBAC, correlation, logging, readiness and health endpoint registration.
+- Security: CSP, security headers, cookies, CSRF inventory and CORS.
+- Infrastructure: storage, upload limits, request limits, environment, startup scripts, stop scripts and migration validation tooling.
+- Optional integrations: SMTP, LDAP and ADFS. Disabled optional integrations are warnings only.
 - Python, `uv`, virtual environment, and backend dependencies.
 - Database connection, engine, path, writability, and SQLite foreign key mode.
 - Alembic current/head revision and missing migration diagnostics.
@@ -131,6 +171,29 @@ Run:
 ```bash
 uv run python -m app.scripts.platform_doctor --fix
 ```
+
+## Version Policy
+
+The authoritative platform version is stored in the repository root `VERSION` file. Backend runtime metadata, FastAPI OpenAPI, `/api/v1/version`, readiness metadata and frontend version display all read or synchronize to that value. Package metadata in `backend/pyproject.toml` and `frontend/package.json` must match `VERSION`.
+
+Check the current version:
+
+```bash
+cd backend
+uv run python -m app.scripts.version
+```
+
+## Migration Validation
+
+Validate migrations and seed idempotency on a temporary SQLite database:
+
+```bash
+cd backend
+uv run python -m app.scripts.validate_migrations
+uv run python -m app.scripts.validate_migrations --json
+```
+
+The validator checks clean upgrade to head, SQLite compatibility, foreign key metadata for future PostgreSQL readiness, downgrade-by-one when supported, and demo seed idempotency by running seed twice. It never touches `dev.db` unless an explicit `--database-path` is supplied.
 
 ## Workflow Center
 

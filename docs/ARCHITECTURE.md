@@ -87,6 +87,14 @@ Security Platform is designed to scale by adding modules around a shared core:
 
 The goal is to grow Security Platform into a portfolio of security services while keeping operational and development practices unified.
 
+## Operational Foundation
+
+The platform version is governed by the root `VERSION` file. Backend metadata, OpenAPI, `/api/v1/version`, readiness and frontend version displays synchronize to that source and package metadata is kept aligned.
+
+Platform Doctor is the local operational diagnostic utility. It groups checks into Core, Security, Infrastructure and Optional Integrations, then retains detailed diagnostics for database, Alembic, Workflow Engine, RBAC, auth, contractor data, seed, storage and migration recovery. Startup scripts consume Doctor JSON and abort on errors unless `-Force` is explicitly supplied.
+
+Development startup and stop scripts are part of the platform foundation. Startup validates migrations, Doctor health, backend readiness, health, version and frontend reachability. Stop only targets processes that can be verified as belonging to the current repository and reports Windows access-denied conditions without killing unrelated Python or Node processes.
+
 ## Workflow Engine And Workflow Center
 
 The generic Workflow Engine is a platform service, not a Contractor Requests subsystem. Its persistence model stores workflow definitions, states, transitions, instances, transition executions, SLA policies and timers, idempotency records and outbox events. Business modules connect through adapter boundaries so the engine can observe and validate module entities without taking over module APIs.

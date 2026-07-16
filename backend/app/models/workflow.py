@@ -232,3 +232,4 @@ class DomainEventOutbox(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[DomainEventStatus] = mapped_column(Enum(DomainEventStatus, name="domain_event_status"), nullable=False, default=DomainEventStatus.PENDING, index=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)

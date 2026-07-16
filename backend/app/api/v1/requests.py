@@ -7,7 +7,9 @@ from fastapi.responses import FileResponse
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import get_current_internal_actor_id_from_user, get_current_permissions, require_permission
+from app.api.deps import get_current_internal_actor_id_from_user, get_current_permissions, require_csrf, require_permission
+from app.core.config import settings
+from app.core.query import validate_search, validate_sort
 from app.db.session import get_db
 from app.models.admin import User
 from app.models.requests import ContractorRequest, RequestAssignment, RequestAttachmentCategory, RequestHistory, RequestHistoryActorType, RequestStatus, RequestVisibility, RequestWorkType
@@ -27,10 +29,10 @@ from app.services.request_service import (
     update_contractor_request,
 )
 from app.services.contractor_request_workflow import workflow_actor_from_user
-from app.services.attachment_service import attachment_file_path, create_attachment, delete_attachment, get_attachment_or_404, list_internal_attachments
+from app.services.attachment_service import attachment_download_response, create_attachment, delete_attachment, get_attachment_or_404, list_internal_attachments
 from app.services.comment_service import create_internal_comment, delete_comment, get_comment_or_404, list_internal_comments, serialize_comment_body, update_comment
 
-router = APIRouter(prefix="/requests", tags=["contractor requests"])
+router = APIRouter(prefix="/requests", tags=["contractor requests"], dependencies=[Depends(require_csrf)])
 
 
 def serialize_request(
@@ -120,7 +122,7 @@ def get_request_or_404(db: Session, request_id: UUID) -> ContractorRequest:
     status_code=status.HTTP_201_CREATED,
     summary="Create contractor request",
 )
-def create_request(payload: ContractorRequestCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("requests.create"))) -> ContractorRequestResponse:
+def create_request(payload: ContractorRequestCreate, db: Session = Depends(get_db), _: None = Depends(require_csrf), user: User = Depends(require_permission("requests.create"))) -> ContractorRequestResponse:
     request, unassigned = create_contractor_request(db, payload, workflow_actor=workflow_actor_from_user(user))
     return serialize_request(get_request_or_404(db, request.id), unassigned)
 
@@ -175,7 +177,7 @@ def apply_request_filters(
 def list_requests(
     db: Session = Depends(get_db),
     _: User = Depends(require_permission("requests.view")),
-    search: str | None = None,
+    search: str | None = Query(default=None, max_length=settings.max_search_length),
     status_filter: RequestStatus | None = Query(default=None, alias="status"),
     priority: str | None = None,
     city_id: UUID | None = None,
@@ -199,8 +201,7 @@ def list_requests(
         "priority": ContractorRequest.priority,
         "desired_completion_date": ContractorRequest.desired_completion_date,
     }
-    if sort_by not in sort_columns:
-        raise HTTPException(status_code=422, detail="Invalid sort_by")
+    search = validate_search(search)
 
     statement = select(ContractorRequest).options(selectinload(ContractorRequest.work_types), selectinload(ContractorRequest.assignments))
     statement = apply_request_filters(
@@ -217,8 +218,8 @@ def list_requests(
         due_from,
         due_to,
     )
-    sort_column = sort_columns[sort_by]
-    statement = statement.order_by(sort_column.asc() if sort_order == "asc" else sort_column.desc()).offset(skip).limit(limit)
+    sort_column, sort_direction = validate_sort(sort_by, sort_order, sort_columns)
+    statement = statement.order_by(sort_column.asc() if sort_direction == "asc" else sort_column.desc()).offset(skip).limit(limit)
     requests = db.scalars(statement).unique().all()
     return [serialize_request(request) for request in requests]
 
@@ -233,6 +234,7 @@ def update_request(
     request_id: UUID,
     payload: ContractorRequestUpdate,
     db: Session = Depends(get_db),
+    __: None = Depends(require_csrf),
     _: User = Depends(require_permission("requests.update")),
 ) -> ContractorRequestResponse:
     request = get_request_or_404(db, request_id)
@@ -241,7 +243,7 @@ def update_request(
 
 
 @router.post("/{request_id}/publish", response_model=ContractorRequestResponse, summary="Publish contractor request")
-def publish_request(request_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_permission("requests.publish"))) -> ContractorRequestResponse:
+def publish_request(request_id: UUID, db: Session = Depends(get_db), _: None = Depends(require_csrf), user: User = Depends(require_permission("requests.publish"))) -> ContractorRequestResponse:
     request = get_request_or_404(db, request_id)
     request, unassigned = publish_contractor_request(db, request, workflow_actor=workflow_actor_from_user(user))
     return serialize_request(get_request_or_404(db, request.id), unassigned)
@@ -252,6 +254,7 @@ def update_request_status(
     request_id: UUID,
     payload: RequestStatusUpdate,
     db: Session = Depends(get_db),
+    __: None = Depends(require_csrf),
     user: User = Depends(require_permission("requests.change_status")),
     permissions: set[str] = Depends(get_current_permissions),
 ) -> ContractorRequestResponse:
@@ -280,6 +283,7 @@ def create_request_comment(
     request_id: UUID,
     payload: RequestCommentCreate,
     db: Session = Depends(get_db),
+    __: None = Depends(require_csrf),
     actor_id: UUID | None = Depends(get_current_internal_actor_id_from_user),
     _: User = Depends(require_permission("requests.comments.internal")),
 ) -> RequestCommentResponse:
@@ -293,6 +297,7 @@ def update_request_comment(
     comment_id: UUID,
     payload: RequestCommentUpdate,
     db: Session = Depends(get_db),
+    __: None = Depends(require_csrf),
     actor_id: UUID | None = Depends(get_current_internal_actor_id_from_user),
     _: User = Depends(require_permission("requests.comments.internal")),
 ) -> RequestCommentResponse:
@@ -306,6 +311,7 @@ def delete_request_comment(
     request_id: UUID,
     comment_id: UUID,
     db: Session = Depends(get_db),
+    __: None = Depends(require_csrf),
     actor_id: UUID | None = Depends(get_current_internal_actor_id_from_user),
     _: User = Depends(require_permission("requests.comments.internal")),
 ) -> RequestCommentResponse:
@@ -329,6 +335,7 @@ async def upload_request_attachment(
     assignment_id: UUID | None = Form(default=None),
     comment_id: UUID | None = Form(default=None),
     db: Session = Depends(get_db),
+    __: None = Depends(require_csrf),
     actor_id: UUID | None = Depends(get_current_internal_actor_id_from_user),
     _: User = Depends(require_permission("requests.attachments.internal")),
 ) -> RequestAttachmentResponse:
@@ -352,7 +359,7 @@ async def upload_request_attachment(
 def download_request_attachment(request_id: UUID, attachment_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.attachments.internal"))) -> FileResponse:
     get_request_or_404(db, request_id)
     attachment = get_attachment_or_404(db, request_id, attachment_id)
-    return FileResponse(attachment_file_path(attachment), media_type=attachment.mime_type, filename=attachment.original_filename)
+    return attachment_download_response(attachment)
 
 
 @router.delete("/{request_id}/attachments/{attachment_id}", response_model=RequestAttachmentResponse, summary="Delete request attachment")
@@ -360,6 +367,7 @@ def delete_request_attachment(
     request_id: UUID,
     attachment_id: UUID,
     db: Session = Depends(get_db),
+    __: None = Depends(require_csrf),
     actor_id: UUID | None = Depends(get_current_internal_actor_id_from_user),
     _: User = Depends(require_permission("requests.attachments.internal")),
 ) -> RequestAttachmentResponse:

@@ -16,8 +16,13 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import bindparam, create_engine, inspect, text
 from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
+from app.core.logging import JsonFormatter, PrettyFormatter
+from app.core.readiness import readiness_checks
+from app.core.security import content_security_policy
+from app.core.version import platform_environment, platform_version
 from app.scripts.seed_demo import DEMO_USERS
 from app.services.contractor_request_workflow import CONTRACTOR_REQUEST_WORKFLOW_CODE
 
@@ -67,6 +72,10 @@ class Check:
     message: str
     details: dict[str, Any] = field(default_factory=dict)
     recommendation: str | None = None
+
+    @property
+    def optional(self) -> bool:
+        return bool(self.details.get("optional"))
 
     def to_dict(self) -> dict[str, Any]:
         data = {
@@ -123,26 +132,67 @@ class DoctorReport:
 
     @property
     def warnings(self) -> int:
-        return sum(1 for section in self.sections for check in section.checks if check.status == WARNING)
+        return len(self.warning_checks)
 
     @property
     def errors(self) -> int:
-        return sum(1 for section in self.sections for check in section.checks if check.status == ERROR)
+        return len(self.error_checks)
+
+    @property
+    def all_checks(self) -> list[tuple[str, Check]]:
+        return [(section.name, check) for section in self.sections for check in section.checks]
+
+    @property
+    def warning_checks(self) -> list[tuple[str, Check]]:
+        return [(section, check) for section, check in self.all_checks if check.status == WARNING]
+
+    @property
+    def error_checks(self) -> list[tuple[str, Check]]:
+        return [(section, check) for section, check in self.all_checks if check.status == ERROR]
+
+    @property
+    def status(self) -> str:
+        if self.errors:
+            return "unhealthy"
+        return "healthy"
 
     @property
     def health_percent(self) -> int:
         checks = [check for section in self.sections for check in section.checks]
         if not checks:
             return 100
-        score = sum(1 for check in checks if check.status == OK) + sum(0.5 for check in checks if check.status == WARNING)
+        score = 0.0
+        for check in checks:
+            if check.status == OK or (check.status == WARNING and check.optional):
+                score += 1
+            elif check.status == WARNING:
+                score += 0.5
         return int(round((score / len(checks)) * 100))
 
     def to_dict(self) -> dict[str, Any]:
+        flat_checks = [
+            {"category": section_name, **check.to_dict()}
+            for section_name, check in self.all_checks
+        ]
+        warnings = [
+            {"category": section_name, **check.to_dict()}
+            for section_name, check in self.warning_checks
+        ]
+        errors = [
+            {"category": section_name, **check.to_dict()}
+            for section_name, check in self.error_checks
+        ]
         return {
-            "status": ERROR if self.errors else (WARNING if self.warnings else OK),
+            "health": self.health_percent,
             "health_percent": self.health_percent,
-            "warnings": self.warnings,
-            "errors": self.errors,
+            "status": self.status,
+            "checks": flat_checks,
+            "warnings": warnings,
+            "errors": errors,
+            "warning_count": self.warnings,
+            "error_count": self.errors,
+            "version": platform_version(),
+            "environment": platform_environment(),
             "fixes_applied": self.fixes_applied,
             "sections": [section.to_dict() for section in self.sections],
         }
@@ -701,6 +751,308 @@ def process_exists(pid: int) -> bool:
         return False
 
 
+def read_pyproject_version(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    try:
+        import tomllib
+
+        return tomllib.loads(path.read_text(encoding="utf-8")).get("project", {}).get("version")
+    except Exception:
+        return None
+
+
+def read_package_version(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8-sig")).get("version")
+    except Exception:
+        return None
+
+
+def iter_api_routes() -> list[tuple[str, Any]]:
+    try:
+        from fastapi.routing import APIRoute
+        from app.main import app
+    except Exception:
+        return []
+
+    result: list[tuple[str, Any]] = []
+
+    def visit(routes: list[Any], prefix: str = "") -> None:
+        for route in routes:
+            if isinstance(route, APIRoute):
+                result.append((f"{prefix}{route.path}", route))
+                continue
+            original_router = getattr(route, "original_router", None)
+            include_context = getattr(route, "include_context", None)
+            if original_router is not None:
+                nested_prefix = f"{prefix}{getattr(include_context, 'prefix', '')}"
+                visit(list(getattr(original_router, "routes", [])), nested_prefix)
+
+    visit(list(app.routes))
+    return result
+
+
+def route_paths() -> set[str]:
+    return {path for path, _route in iter_api_routes()}
+
+
+def route_dependency_names(path_prefix: str | None = None) -> dict[str, set[str]]:
+    inventory: dict[str, set[str]] = {}
+    for path, route in iter_api_routes():
+        if path_prefix and not path.startswith(path_prefix):
+            continue
+        names: set[str] = set()
+        stack = list(route.dependant.dependencies)
+        while stack:
+            dependency = stack.pop()
+            if dependency.call is not None:
+                names.add(getattr(dependency.call, "__name__", ""))
+            stack.extend(dependency.dependencies)
+        inventory[path] = names
+    return inventory
+
+
+def mutation_routes_missing_csrf() -> list[str]:
+    routes = iter_api_routes()
+    if not routes:
+        return ["<route inventory unavailable>"]
+
+    exemptions = {
+        f"{settings.api_v1_prefix}/auth/login",
+        f"{settings.api_v1_prefix}/auth/refresh",
+    }
+    dependencies = route_dependency_names()
+    missing: list[str] = []
+    for path, route in routes:
+        if not path.startswith(settings.api_v1_prefix):
+            continue
+        methods = set(route.methods or set())
+        if not methods.intersection({"POST", "PUT", "PATCH", "DELETE"}):
+            continue
+        if path in exemptions:
+            continue
+        if "require_csrf" not in dependencies.get(path, set()):
+            missing.append(path)
+    return sorted(missing)
+
+
+def check_core_summary(report: DoctorReport, context: DoctorContext, engine: Engine | None, current_revision: str | None) -> None:
+    section = Section("Core")
+    version = platform_version()
+    version_path = context.root_path / "VERSION"
+    root_version = version_path.read_text(encoding="utf-8").strip() if version_path.exists() else None
+    backend_version = read_pyproject_version(context.backend_path / "pyproject.toml")
+    frontend_version = read_package_version(context.root_path / "frontend" / "package.json")
+    versions = {
+        "VERSION": root_version,
+        "backend": backend_version,
+        "frontend": frontend_version,
+        "runtime": version,
+    }
+    consistent = bool(version and all(item == version for item in versions.values()))
+    section.add(
+        "Platform Version",
+        OK if consistent else ERROR,
+        f"Platform version {version}" if consistent else "Platform version is not synchronized",
+        {"versions": versions},
+        "Synchronize VERSION, backend pyproject.toml and frontend package.json" if not consistent else None,
+    )
+    section.add(
+        "Database",
+        OK if engine is not None else ERROR,
+        "Database connectivity is available" if engine is not None else "Database connectivity failed",
+    )
+    head = None
+    try:
+        head = alembic_head(context)
+    except Exception:
+        head = None
+    section.add(
+        "Alembic",
+        OK if current_revision and head and current_revision == head else ERROR,
+        "Alembic revision matches head" if current_revision and head and current_revision == head else "Alembic revision mismatch",
+        {"current": current_revision, "head": head},
+        "Run: uv run alembic upgrade head" if not (current_revision and head and current_revision == head) else None,
+    )
+    section.add(
+        "Workflow Engine",
+        OK if "workflow_definitions" in workflow_table_names(engine) else ERROR,
+        "Workflow engine tables are present" if "workflow_definitions" in workflow_table_names(engine) else "Workflow engine tables are missing",
+    )
+    section.add(
+        "RBAC",
+        OK if required_tables_present(engine, ("permissions", "roles", "role_permissions")) else ERROR,
+        "RBAC tables are present" if required_tables_present(engine, ("permissions", "roles", "role_permissions")) else "RBAC tables are missing",
+    )
+    section.add(
+        "Correlation",
+        OK if settings.correlation_id_header else ERROR,
+        f"Correlation header: {settings.correlation_id_header}" if settings.correlation_id_header else "Correlation header is missing",
+    )
+    logging_ok = settings.log_format.lower() in {"console", "json"} and JsonFormatter and PrettyFormatter
+    section.add(
+        "Logging",
+        OK if logging_ok else ERROR,
+        f"Structured logging configured for {settings.log_format}" if logging_ok else "Structured logging format is invalid",
+        {"format": settings.log_format, "environment": settings.environment},
+    )
+    paths = route_paths()
+    readiness_ok = f"{settings.api_v1_prefix}/readiness" in paths
+    health_ok = f"{settings.api_v1_prefix}/health" in paths
+    section.add(
+        "Readiness",
+        OK if readiness_ok and health_ok else ERROR,
+        "Health and readiness endpoints are registered" if readiness_ok and health_ok else "Health or readiness endpoint is missing",
+        {"health": health_ok, "readiness": readiness_ok},
+    )
+    report.sections.append(section)
+
+
+def workflow_table_names(engine: Engine | None) -> set[str]:
+    if engine is None:
+        return set()
+    try:
+        with engine.connect() as connection:
+            return set(inspect(connection).get_table_names())
+    except Exception:
+        return set()
+
+
+def required_tables_present(engine: Engine | None, table_names: tuple[str, ...]) -> bool:
+    existing = workflow_table_names(engine)
+    return all(table in existing for table in table_names)
+
+
+def check_security_summary(report: DoctorReport) -> None:
+    section = Section("Security")
+    csp = content_security_policy()
+    production = settings.environment.lower() in {"production", "prod"}
+    section.add(
+        "CSP",
+        OK if "default-src 'self'" in csp and "object-src 'none'" in csp else ERROR,
+        "Content Security Policy is configured",
+        {"production": production, "policy": csp},
+    )
+    section.add(
+        "Security Headers",
+        OK,
+        "Security headers are registered through middleware",
+        {"headers": ["X-Content-Type-Options", "Referrer-Policy", "X-Frame-Options", "Content-Security-Policy", "Permissions-Policy"]},
+    )
+    cookie_ok = settings.auth_cookie_samesite in {"lax", "strict", "none"} and bool(settings.auth_cookie_path)
+    if production:
+        cookie_ok = cookie_ok and settings.hsts_enabled and settings.auth_token_secret not in {None, "change-me", "secret", "test-secret"}
+    section.add(
+        "Cookies",
+        OK if cookie_ok else ERROR,
+        "Cookie configuration is safe for the current environment" if cookie_ok else "Cookie configuration is unsafe",
+        {"same_site": settings.auth_cookie_samesite, "path": settings.auth_cookie_path, "domain_configured": bool(settings.auth_cookie_domain)},
+    )
+    missing_csrf = mutation_routes_missing_csrf()
+    section.add(
+        "CSRF",
+        OK if not missing_csrf else ERROR,
+        "All non-exempt mutation routes require CSRF" if not missing_csrf else "Mutation routes missing CSRF protection",
+        {"missing_routes": missing_csrf, "exemptions": [f"{settings.api_v1_prefix}/auth/login", f"{settings.api_v1_prefix}/auth/refresh"]},
+    )
+    cors_ok = bool(settings.backend_cors_origins) and "*" not in settings.backend_cors_origins
+    if production:
+        cors_ok = cors_ok and all("localhost" not in origin and "127.0.0.1" not in origin for origin in settings.backend_cors_origins)
+    section.add(
+        "CORS",
+        OK if cors_ok else ERROR,
+        "CORS origins are explicit" if cors_ok else "CORS origins are unsafe or missing",
+        {"origin_count": len(settings.backend_cors_origins)},
+    )
+    report.sections.append(section)
+
+
+def check_infrastructure_summary(report: DoctorReport, context: DoctorContext) -> None:
+    section = Section("Infrastructure")
+    storage_exists = context.storage_path.exists() and context.storage_path.is_dir()
+    section.add(
+        "Storage",
+        OK if storage_exists else WARNING,
+        f"Storage path exists: {context.storage_path}" if storage_exists else f"Storage path is missing: {context.storage_path}",
+        {"path": str(context.storage_path)},
+        "Run: uv run python -m app.scripts.platform_doctor --fix" if not storage_exists else None,
+    )
+    upload_ok = settings.max_upload_file_bytes > 0 and settings.max_files_per_request > 0
+    section.add(
+        "Upload Limits",
+        OK if upload_ok else ERROR,
+        "Upload limits are configured" if upload_ok else "Upload limits are invalid",
+        {"max_upload_file_bytes": settings.max_upload_file_bytes, "max_files_per_request": settings.max_files_per_request},
+    )
+    request_ok = settings.max_request_body_bytes >= settings.max_json_body_bytes > 0 and settings.max_request_body_bytes >= settings.max_multipart_body_bytes > 0
+    section.add(
+        "Request Limits",
+        OK if request_ok else ERROR,
+        "Request body limits are configured" if request_ok else "Request body limits are invalid",
+        {
+            "max_request_body_bytes": settings.max_request_body_bytes,
+            "max_json_body_bytes": settings.max_json_body_bytes,
+            "max_multipart_body_bytes": settings.max_multipart_body_bytes,
+        },
+    )
+    env_ok = settings.environment.lower() not in {"production", "prod"} or (settings.hsts_enabled and settings.public_base_url)
+    section.add(
+        "Environment",
+        OK if env_ok else ERROR,
+        f"Environment: {settings.environment}" if env_ok else "Production environment is missing HTTPS configuration",
+        {"environment": settings.environment, "public_base_url_configured": bool(settings.public_base_url), "hsts_enabled": settings.hsts_enabled},
+    )
+    start_script = context.root_path / "scripts" / "start-dev.ps1"
+    stop_script = context.root_path / "scripts" / "stop-dev.ps1"
+    section.add(
+        "Startup Scripts",
+        OK if start_script.exists() else ERROR,
+        "Startup script is present" if start_script.exists() else "Startup script is missing",
+        {"path": str(start_script)},
+    )
+    section.add(
+        "Stop Scripts",
+        OK if stop_script.exists() else ERROR,
+        "Stop script is present" if stop_script.exists() else "Stop script is missing",
+        {"path": str(stop_script)},
+    )
+    validation_script = context.backend_path / "app" / "scripts" / "validate_migrations.py"
+    section.add(
+        "Migration Validation",
+        OK if validation_script.exists() else WARNING,
+        "Migration validation command is available" if validation_script.exists() else "Migration validation command is not installed",
+        {"path": str(validation_script)},
+    )
+    report.sections.append(section)
+
+
+def check_optional_integrations(report: DoctorReport, engine: Engine | None) -> None:
+    section = Section("Optional integrations")
+    provider_config = {provider: False for provider in PROVIDER_TYPES}
+    if engine is not None:
+        try:
+            with engine.connect() as connection:
+                inspector = inspect(connection)
+                if table_exists(inspector, "connection_configurations"):
+                    rows = connection.execute(text("select provider_type, is_active from connection_configurations")).all()
+                    for provider_type, is_active in rows:
+                        provider_config[str(provider_type)] = bool(is_active)
+        except Exception:
+            pass
+    for provider in PROVIDER_TYPES:
+        configured = provider_config[provider]
+        section.add(
+            provider,
+            OK if configured else WARNING,
+            f"{provider}: {'Configured' if configured else 'Not configured'}",
+            {"configured": configured, "optional": True},
+        )
+    report.sections.append(section)
+
+
 def check_configuration(report: DoctorReport, context: DoctorContext, engine: Engine | None) -> None:
     section = Section("Configuration")
     env_values = read_env_file(context.env_path)
@@ -733,7 +1085,7 @@ def check_configuration(report: DoctorReport, context: DoctorContext, engine: En
             pass
     for provider in PROVIDER_TYPES:
         configured = provider_config[provider]
-        section.add(provider, OK if configured else WARNING, f"{provider}: {'Configured' if configured else 'Not configured'}", {"configured": configured})
+        section.add(provider, OK if configured else WARNING, f"{provider}: {'Configured' if configured else 'Not configured'}", {"configured": configured, "optional": True})
     report.sections.append(section)
 
 
@@ -818,9 +1170,13 @@ def run_doctor(
     context = resolve_context(root_path, backend_path, env_path, database_url, storage_path, runtime_path, fix, verbose)
     report = DoctorReport()
     remove_stale_runtime_files(report, context)
-    check_python_environment(report)
     engine = check_database(report, context)
     current_revision = check_alembic(report, context, engine)
+    check_core_summary(report, context, engine, current_revision)
+    check_security_summary(report)
+    check_infrastructure_summary(report, context)
+    check_optional_integrations(report, engine)
+    check_python_environment(report)
     check_workflow(report, engine)
     check_rbac(report, engine)
     check_auth(report, engine)
@@ -880,10 +1236,24 @@ def render_text(report: DoctorReport, *, verbose: bool = False, no_color: bool =
     return "\n".join(lines)
 
 
+def render_summary(report: DoctorReport) -> str:
+    return "\n".join(
+        [
+            f"Platform Health: {report.health_percent}%",
+            f"Status: {report.status}",
+            f"Errors: {report.errors}",
+            f"Warnings: {report.warnings}",
+            f"Version: {platform_version()}",
+            f"Environment: {platform_environment()}",
+        ]
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run structured Platform Doctor checks for the development environment.")
     parser.add_argument("--json", action="store_true", help="Print a machine-readable JSON report.")
     parser.add_argument("--verbose", action="store_true", help="Print every individual check.")
+    parser.add_argument("--summary", action="store_true", help="Print a compact health summary.")
     parser.add_argument("--fix", action="store_true", help="Apply safe local fixes only.")
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in text output.")
     return parser.parse_args()
@@ -894,6 +1264,8 @@ def main() -> None:
     report = run_doctor(fix=args.fix, verbose=args.verbose)
     if args.json:
         print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    elif args.summary:
+        print(render_summary(report))
     else:
         print(render_text(report, verbose=args.verbose, no_color=args.no_color))
     raise SystemExit(1 if report.errors else 0)

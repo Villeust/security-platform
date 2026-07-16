@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Current Version" src="https://img.shields.io/badge/version-v0.9--dev-2089d6?style=for-the-badge" />
+  <img alt="Current Version" src="https://img.shields.io/badge/version-v0.8.0-2089d6?style=for-the-badge" />
   <img alt="React" src="https://img.shields.io/badge/React-18.3-61dafb?style=for-the-badge&logo=react&logoColor=111827" />
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-ready-4169e1?style=for-the-badge&logo=postgresql&logoColor=white" />

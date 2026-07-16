@@ -28,7 +28,7 @@ from app.schemas.requests import (
 from app.schemas.contractor_portal import ContractorCompany, ContractorDashboardResponse, ContractorMeResponse, ContractorNotificationResponse
 from app.services.request_service import change_assignment_status
 from app.services.attachment_service import (
-    attachment_file_path,
+    attachment_download_response,
     create_attachment,
     delete_attachment,
     ensure_contractor_can_access_attachment,
@@ -44,7 +44,7 @@ from app.services.comment_service import (
     update_comment,
 )
 
-router = APIRouter(prefix="/contractor", tags=["contractor portal"])
+router = APIRouter(prefix="/contractor", tags=["contractor portal"], dependencies=[Depends(require_csrf)])
 
 CONTRACTOR_VISIBLE_EVENTS = {
     RequestHistoryEventType.PUBLISHED,
@@ -490,7 +490,7 @@ def download_contractor_request_attachment(
     get_owned_request(db, request_id, context.contractor_ids)
     attachment = get_attachment_or_404(db, request_id, attachment_id)
     ensure_contractor_can_access_attachment(attachment)
-    return FileResponse(attachment_file_path(attachment), media_type=attachment.mime_type, filename=attachment.original_filename)
+    return attachment_download_response(attachment)
 
 
 @router.delete("/requests/{request_id}/attachments/{attachment_id}", response_model=RequestAttachmentResponse, summary="Delete contractor attachment")

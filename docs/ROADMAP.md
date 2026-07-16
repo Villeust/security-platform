@@ -8,7 +8,7 @@ Security Platform is in active development. The roadmap separates completed foun
 | v0.5 | Workflow Engine foundation and Workflow Center | In progress |
 | v0.6 | Attachments, Comments, Notifications | Planned |
 | v0.7 | Authentication, Roles, Permissions | Planned |
-| v0.8 | Contractor Portal | Planned |
+| v0.8 | Platform Stabilization operational baseline | Current |
 | v0.9 | Monitoring, Reports | Planned |
 | v1.0 | Production Release | Future |
 
@@ -55,11 +55,13 @@ Status: Planned
 
 ## v0.8
 
-Status: Planned
+Status: Current
 
-- Contractor Portal.
-- Contractor-facing workflows.
-- Contractor request visibility and actions.
+- Authoritative platform version `0.8.0`.
+- Platform Doctor 2.0 with JSON, summary and safe fix modes.
+- Startup and stop reliability hardening.
+- Migration validation command.
+- Production environment validation for secrets, HTTPS, cookies, CORS and dev-mode controls.
 
 ## v0.9
 

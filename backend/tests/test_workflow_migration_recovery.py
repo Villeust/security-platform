@@ -14,6 +14,8 @@ from app.scripts.recover_partial_workflow_migration import (
 from app.scripts.seed_demo import run_seed
 from app.services.rbac_service import seed_rbac
 
+HEAD_REVISION = "20260717_0011"
+
 
 def configure_database(monkeypatch, tmp_path: Path) -> Path:
     database_path = tmp_path / "migration.db"
@@ -54,7 +56,7 @@ def test_clean_database_upgrades_to_head(monkeypatch, tmp_path: Path) -> None:
 
     command.upgrade(alembic_config(), "head")
 
-    assert current_revision(database_path) == "20260716_0010"
+    assert current_revision(database_path) == HEAD_REVISION
 
 
 def test_0008_database_with_preseeded_workflow_permissions_upgrades_to_head(monkeypatch, tmp_path: Path) -> None:
@@ -74,7 +76,7 @@ def test_0008_database_with_preseeded_workflow_permissions_upgrades_to_head(monk
 
     command.upgrade(config, "head")
 
-    assert current_revision(database_path) == "20260716_0010"
+    assert current_revision(database_path) == HEAD_REVISION
     assert workflow_permission_role_mapping_count(database_path) == before_count
 
 
@@ -111,7 +113,7 @@ def test_partial_workflow_migration_recovery_preserves_non_workflow_data(monkeyp
     assert recovered.preserved_counts["permissions"] == dry_run.preserved_counts["permissions"]
 
     command.upgrade(config, "head")
-    assert current_revision(database_path) == "20260716_0010"
+    assert current_revision(database_path) == HEAD_REVISION
 
     engine = create_engine(f"sqlite:///{database_path.as_posix()}")
     try:

@@ -26,16 +26,39 @@ def client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def set_auth_cookies(response: Response, access_token: str, refresh_token: str, csrf_token: str) -> None:
+def auth_cookie_kwargs(*, httponly: bool, max_age: int | None = None) -> dict:
     secure = settings.environment.lower() in {"production", "prod"}
-    response.set_cookie(settings.auth_access_cookie_name, access_token, httponly=True, samesite="lax", secure=secure)
-    response.set_cookie(settings.auth_refresh_cookie_name, refresh_token, httponly=True, samesite="lax", secure=secure)
-    response.set_cookie(settings.auth_csrf_cookie_name, csrf_token, httponly=False, samesite="lax", secure=secure)
+    kwargs = {
+        "httponly": httponly,
+        "samesite": settings.auth_cookie_samesite,
+        "secure": secure,
+        "path": settings.auth_cookie_path,
+    }
+    if settings.auth_cookie_domain:
+        kwargs["domain"] = settings.auth_cookie_domain
+    if max_age is not None:
+        kwargs["max_age"] = max_age
+    return kwargs
+
+
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str, csrf_token: str) -> None:
+    access_max_age = settings.auth_access_minutes * 60
+    refresh_max_age = settings.auth_refresh_days * 24 * 60 * 60
+    response.set_cookie(settings.auth_access_cookie_name, access_token, **auth_cookie_kwargs(httponly=True, max_age=access_max_age))
+    response.set_cookie(settings.auth_refresh_cookie_name, refresh_token, **auth_cookie_kwargs(httponly=True, max_age=refresh_max_age))
+    response.set_cookie(settings.auth_csrf_cookie_name, csrf_token, **auth_cookie_kwargs(httponly=False, max_age=access_max_age))
 
 
 def clear_auth_cookies(response: Response) -> None:
     for name in (settings.auth_access_cookie_name, settings.auth_refresh_cookie_name, settings.auth_csrf_cookie_name):
-        response.delete_cookie(name)
+        response.delete_cookie(
+            name,
+            path=settings.auth_cookie_path,
+            domain=settings.auth_cookie_domain,
+            samesite=settings.auth_cookie_samesite,
+            secure=settings.environment.lower() in {"production", "prod"},
+            httponly=name != settings.auth_csrf_cookie_name,
+        )
 
 
 def create_session(db: Session, user: User, request: Request, restricted: bool = False, family_id: UUID | None = None) -> tuple[AuthSession, str, str, str]:

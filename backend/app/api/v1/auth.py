@@ -92,7 +92,7 @@ def refresh(
 
 
 @router.post("/logout", response_model=MessageResponse)
-def logout(response: Response, session=Depends(get_current_session), db: Session = Depends(get_db)) -> MessageResponse:
+def logout(response: Response, _: None = Depends(require_csrf), session=Depends(get_current_session), db: Session = Depends(get_db)) -> MessageResponse:
     revoke_session(db, session, "logout")
     db.commit()
     clear_auth_cookies(response)
@@ -100,7 +100,7 @@ def logout(response: Response, session=Depends(get_current_session), db: Session
 
 
 @router.post("/logout-all", response_model=MessageResponse)
-def logout_all(response: Response, user: User = Depends(get_current_user_stub), db: Session = Depends(get_db)) -> MessageResponse:
+def logout_all(response: Response, _: None = Depends(require_csrf), user: User = Depends(get_current_user_stub), db: Session = Depends(get_db)) -> MessageResponse:
     revoke_all_sessions(db, user.id, "logout_all")
     db.commit()
     clear_auth_cookies(response)

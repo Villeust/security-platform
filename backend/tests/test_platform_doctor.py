@@ -9,10 +9,12 @@ import app.models.reference_data  # noqa: F401
 import app.models.requests  # noqa: F401
 import app.models.workflow  # noqa: F401
 from app.db.base import Base
-from app.scripts.platform_doctor import ERROR, OK, WARNING, DoctorReport, render_text, run_doctor
+from app.core.version import platform_version
+from app.scripts.platform_doctor import ERROR, OK, WARNING, DoctorReport, render_summary, render_text, run_doctor
 from app.services.contractor_request_workflow import seed_contractor_request_workflow_definition
 from app.services.rbac_service import seed_rbac
 
+HEAD_REVISION = "20260717_0011"
 
 def write_env(path: Path) -> Path:
     path.write_text(
@@ -29,7 +31,7 @@ def write_env(path: Path) -> Path:
     return path
 
 
-def prepare_database(tmp_path: Path, *, revision: str = "20260716_0010", seed_workflow: bool = True, seed_permissions: bool = True) -> Path:
+def prepare_database(tmp_path: Path, *, revision: str = HEAD_REVISION, seed_workflow: bool = True, seed_permissions: bool = True) -> Path:
     database_path = tmp_path / "doctor.db"
     engine = create_engine(f"sqlite:///{database_path.as_posix()}")
     Base.metadata.create_all(engine)
@@ -125,7 +127,7 @@ def test_platform_doctor_reports_duplicate_role_permissions(tmp_path: Path) -> N
     engine = create_engine(f"sqlite:///{database_path.as_posix()}")
     with engine.begin() as connection:
         connection.execute(text("create table alembic_version (version_num varchar(32) not null)"))
-        connection.execute(text("insert into alembic_version values ('20260716_0010')"))
+        connection.execute(text("insert into alembic_version values (:revision)"), {"revision": HEAD_REVISION})
         connection.execute(text("create table roles (id varchar, code varchar)"))
         connection.execute(text("create table permissions (id varchar, code varchar)"))
         connection.execute(text("create table role_permissions (role_id varchar, permission_id varchar)"))
@@ -164,9 +166,44 @@ def test_platform_doctor_json_output_is_machine_readable(tmp_path: Path) -> None
     report = run_for_db(tmp_path, database_path)
     payload = json.loads(json.dumps(report.to_dict()))
 
-    assert payload["errors"] == report.errors
+    assert payload["error_count"] == report.errors
+    assert isinstance(payload["errors"], list)
+    assert isinstance(payload["warnings"], list)
+    assert isinstance(payload["checks"], list)
+    assert payload["health"] == report.health_percent
     assert payload["health_percent"] == report.health_percent
+    assert payload["status"] in {"healthy", "unhealthy"}
+    assert payload["version"] == platform_version()
+    assert payload["environment"]
     assert any(item["name"] == "Workflow" for item in payload["sections"])
+
+
+def test_platform_doctor_summary_output(tmp_path: Path) -> None:
+    database_path = prepare_database(tmp_path)
+
+    report = run_for_db(tmp_path, database_path)
+    output = render_summary(report)
+
+    assert "Platform Health:" in output
+    assert "Errors:" in output
+    assert "Warnings:" in output
+    assert "Version: 0.8.0" in output
+
+
+def test_platform_doctor_core_security_and_infrastructure_categories(tmp_path: Path) -> None:
+    database_path = prepare_database(tmp_path)
+    storage_path = tmp_path / "storage"
+    storage_path.mkdir()
+
+    report = run_for_db(tmp_path, database_path, storage_path=storage_path)
+
+    assert check(report, "Core", "Platform Version").status == OK
+    assert check(report, "Core", "Readiness").status == OK
+    assert check(report, "Security", "CSRF").status == OK
+    assert check(report, "Security", "CORS").status == OK
+    assert check(report, "Infrastructure", "Startup Scripts").status == OK
+    assert check(report, "Infrastructure", "Stop Scripts").status == OK
+    assert check(report, "Optional integrations", "SMTP").status == WARNING
 
 
 def test_platform_doctor_fix_mode_clears_stale_runtime_files(tmp_path: Path) -> None:

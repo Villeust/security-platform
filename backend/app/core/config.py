@@ -1,7 +1,8 @@
 import json
 from typing import Any
+from urllib.parse import urlparse
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,10 +45,31 @@ class Settings(BaseSettings):
     auth_access_minutes: int = Field(default=30, alias="AUTH_ACCESS_MINUTES")
     auth_refresh_days: int = Field(default=7, alias="AUTH_REFRESH_DAYS")
     auth_token_secret: str | None = Field(default=None, alias="AUTH_TOKEN_SECRET")
+    auth_cookie_samesite: str = Field(default="lax", alias="AUTH_COOKIE_SAMESITE")
+    auth_cookie_path: str = Field(default="/", alias="AUTH_COOKIE_PATH")
+    auth_cookie_domain: str | None = Field(default=None, alias="AUTH_COOKIE_DOMAIN")
     connection_secrets_key: str | None = Field(default=None, alias="CONNECTION_SECRETS_KEY")
     admin_lock_notification_enabled: bool = Field(default=True, alias="ADMIN_LOCK_NOTIFICATION_ENABLED")
     password_expiry_notification_enabled: bool = Field(default=True, alias="PASSWORD_EXPIRY_NOTIFICATION_ENABLED")
     notification_email_enabled: bool = Field(default=False, alias="NOTIFICATION_EMAIL_ENABLED")
+    service_name: str = Field(default="security-platform-api", alias="SERVICE_NAME")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    log_format: str = Field(default="console", alias="LOG_FORMAT")
+    log_health_requests: bool = Field(default=False, alias="LOG_HEALTH_REQUESTS")
+    correlation_id_header: str = Field(default="X-Correlation-ID", alias="CORRELATION_ID_HEADER")
+    public_base_url: str | None = Field(default=None, alias="PUBLIC_BASE_URL")
+    hsts_enabled: bool = Field(default=False, alias="HSTS_ENABLED")
+    max_request_body_bytes: int = Field(default=25 * 1024 * 1024, alias="MAX_REQUEST_BODY_BYTES")
+    max_json_body_bytes: int = Field(default=1024 * 1024, alias="MAX_JSON_BODY_BYTES")
+    max_multipart_body_bytes: int = Field(default=25 * 1024 * 1024, alias="MAX_MULTIPART_BODY_BYTES")
+    max_upload_file_bytes: int = Field(default=20 * 1024 * 1024, alias="MAX_UPLOAD_FILE_BYTES")
+    max_files_per_request: int = Field(default=1, alias="MAX_FILES_PER_REQUEST")
+    default_page_limit: int = Field(default=100, alias="DEFAULT_PAGE_LIMIT")
+    max_page_limit: int = Field(default=200, alias="MAX_PAGE_LIMIT")
+    max_search_length: int = Field(default=128, alias="MAX_SEARCH_LENGTH")
+    rate_limit_enabled: bool = Field(default=False, alias="RATE_LIMIT_ENABLED")
+    auth_rate_limit_per_minute: int = Field(default=10, alias="AUTH_RATE_LIMIT_PER_MINUTE")
+    debug_enabled: bool = Field(default=False, alias="APP_DEBUG")
 
     @field_validator("backend_cors_origins", mode="before")
     @classmethod
@@ -58,6 +80,54 @@ class Settings(BaseSettings):
                 return json.loads(value)
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @field_validator("auth_cookie_samesite")
+    @classmethod
+    def validate_samesite(cls, value: str) -> str:
+        normalized = value.lower()
+        if normalized not in {"lax", "strict", "none"}:
+            raise ValueError("AUTH_COOKIE_SAMESITE must be lax, strict or none")
+        return normalized
+
+    @field_validator("backend_cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, value: list[str]) -> list[str]:
+        if any(origin == "*" for origin in value):
+            raise ValueError("BACKEND_CORS_ORIGINS cannot contain wildcard origins when credentials are enabled")
+        for origin in value:
+            parsed = urlparse(origin)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+                raise ValueError("BACKEND_CORS_ORIGINS must contain absolute http(s) origins without paths")
+        return value
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        production = self.environment.lower() in {"production", "prod"}
+        if not production:
+            return self
+        if not self.backend_cors_origins:
+            raise ValueError("BACKEND_CORS_ORIGINS is required in production")
+        if any("localhost" in origin or "127.0.0.1" in origin for origin in self.backend_cors_origins):
+            raise ValueError("Production CORS origins must not use localhost defaults")
+        unsafe_secret_values = {"change-me", "test-secret", "secret", "dev-only-change-before-production"}
+        if not self.auth_token_secret or self.auth_token_secret in unsafe_secret_values:
+            raise ValueError("AUTH_TOKEN_SECRET must be set to a production secret")
+        if not self.connection_secrets_key or self.connection_secrets_key in unsafe_secret_values or self.connection_secrets_key == "test-secret-key":
+            raise ValueError("CONNECTION_SECRETS_KEY must be set to a production secret")
+        if self.allow_dev_auth_headers:
+            raise ValueError("ALLOW_DEV_AUTH_HEADERS must be false in production")
+        if self.debug_enabled:
+            raise ValueError("DEBUG must be false in production")
+        if not self.hsts_enabled:
+            raise ValueError("HSTS_ENABLED must be true in production")
+        if self.auth_cookie_samesite == "none" and not self.hsts_enabled:
+            raise ValueError("AUTH_COOKIE_SAMESITE=none requires HTTPS/HSTS configuration in production")
+        if not self.public_base_url:
+            raise ValueError("PUBLIC_BASE_URL is required in production")
+        parsed = urlparse(self.public_base_url)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError("PUBLIC_BASE_URL must be an HTTPS URL in production")
+        return self
 
 
 settings = Settings()
