@@ -13,6 +13,7 @@ from app.schemas.requests import ContractorRequestCreate
 from app.services.rbac_service import seed_rbac
 from app.services.request_service import create_contractor_request
 from app.services.password_service import password_expires_at_from_now, password_hasher
+from app.services.contractor_request_workflow import backfill_contractor_request_workflow_instances, seed_contractor_request_workflow_definition
 
 
 DEMO_CITY_CODE = "DEMO-ALA"
@@ -288,6 +289,8 @@ def run_seed(db: Session | None = None) -> SeedResult:
 
         if owns_session:
             session.commit()
+        seed_contractor_request_workflow_definition(session)
+        backfill_contractor_request_workflow_instances(session)
         users = {
             "platform_admin": get_or_create_demo_user(session, "PLATFORM_ADMIN").id,
             "security_admin": get_or_create_demo_user(session, "SECURITY_ADMIN").id,

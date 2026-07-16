@@ -1,6 +1,7 @@
 param(
     [switch]$Seed,
-    [switch]$ForceRestart
+    [switch]$ForceRestart,
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -143,6 +144,49 @@ function Run-Step($WorkingDirectory, $Command, $Arguments) {
     }
 }
 
+function Invoke-PlatformDoctor() {
+    $DoctorJsonPath = Join-Path $Runtime "platform-doctor.json"
+    $DoctorErrorPath = Join-Path $Runtime "platform-doctor.err"
+
+    Push-Location $Backend
+    try {
+        & uv run python -m app.scripts.platform_doctor --json --no-color 1> $DoctorJsonPath 2> $DoctorErrorPath
+        $DoctorExitCode = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+
+    $DoctorJson = if (Test-Path $DoctorJsonPath) { Get-Content $DoctorJsonPath -Raw } else { "" }
+    try {
+        $DoctorReport = $DoctorJson | ConvertFrom-Json
+    }
+    catch {
+        Write-Host "Platform Doctor did not return valid JSON." -ForegroundColor Red
+        if (Test-Path $DoctorErrorPath) {
+            Get-Content $DoctorErrorPath | Write-Host
+        }
+        Fail "Platform Doctor failed before startup."
+    }
+
+    if ($DoctorReport.errors -gt 0 -or $DoctorExitCode -ne 0) {
+        if ($Force) {
+            Write-Host "Platform Doctor found $($DoctorReport.errors) error(s); continuing because -Force was supplied." -ForegroundColor Yellow
+            return
+        }
+
+        Write-Host "Platform Doctor found $($DoctorReport.errors) error(s)." -ForegroundColor Red
+        Push-Location $Backend
+        try {
+            & uv run python -m app.scripts.platform_doctor --no-color
+        }
+        finally {
+            Pop-Location
+        }
+        Fail "Startup aborted. Re-run with -Force to bypass Platform Doctor errors."
+    }
+}
+
 function Import-DotEnv($Path) {
     if (-not (Test-Path $Path)) {
         return
@@ -196,6 +240,8 @@ if ($Seed) {
     Write-Host "Running demo seed..."
     Run-Step $Backend "uv" @("run", "python", "-m", "app.scripts.seed_demo")
 }
+
+Invoke-PlatformDoctor
 
 $BackendArgs = @("-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "`$env:UV_CACHE_DIR='$($env:UV_CACHE_DIR)'; `$env:UV_PROJECT_ENVIRONMENT='$($env:UV_PROJECT_ENVIRONMENT)'; cd '$Backend'; uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000")
 $FrontendArgs = @("-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "cd '$Frontend'; npm.cmd run dev -- --host 127.0.0.1 --port 3000 --strictPort")

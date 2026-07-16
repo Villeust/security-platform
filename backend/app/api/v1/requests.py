@@ -26,6 +26,7 @@ from app.services.request_service import (
     unassigned_work_type_ids,
     update_contractor_request,
 )
+from app.services.contractor_request_workflow import workflow_actor_from_user
 from app.services.attachment_service import attachment_file_path, create_attachment, delete_attachment, get_attachment_or_404, list_internal_attachments
 from app.services.comment_service import create_internal_comment, delete_comment, get_comment_or_404, list_internal_comments, serialize_comment_body, update_comment
 
@@ -119,8 +120,8 @@ def get_request_or_404(db: Session, request_id: UUID) -> ContractorRequest:
     status_code=status.HTTP_201_CREATED,
     summary="Create contractor request",
 )
-def create_request(payload: ContractorRequestCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.create"))) -> ContractorRequestResponse:
-    request, unassigned = create_contractor_request(db, payload)
+def create_request(payload: ContractorRequestCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("requests.create"))) -> ContractorRequestResponse:
+    request, unassigned = create_contractor_request(db, payload, workflow_actor=workflow_actor_from_user(user))
     return serialize_request(get_request_or_404(db, request.id), unassigned)
 
 
@@ -240,9 +241,9 @@ def update_request(
 
 
 @router.post("/{request_id}/publish", response_model=ContractorRequestResponse, summary="Publish contractor request")
-def publish_request(request_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_permission("requests.publish"))) -> ContractorRequestResponse:
+def publish_request(request_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_permission("requests.publish"))) -> ContractorRequestResponse:
     request = get_request_or_404(db, request_id)
-    request, unassigned = publish_contractor_request(db, request)
+    request, unassigned = publish_contractor_request(db, request, workflow_actor=workflow_actor_from_user(user))
     return serialize_request(get_request_or_404(db, request.id), unassigned)
 
 
@@ -251,13 +252,13 @@ def update_request_status(
     request_id: UUID,
     payload: RequestStatusUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("requests.change_status")),
+    user: User = Depends(require_permission("requests.change_status")),
     permissions: set[str] = Depends(get_current_permissions),
 ) -> ContractorRequestResponse:
     if payload.status == RequestStatus.CLOSED and "requests.close" not in permissions:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
     request = get_request_or_404(db, request_id)
-    change_request_status(db, request, payload.status, comment=payload.comment)
+    change_request_status(db, request, payload.status, comment=payload.comment, workflow_actor=workflow_actor_from_user(user))
     return serialize_request(get_request_or_404(db, request_id))
 
 

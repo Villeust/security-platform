@@ -1,230 +1,365 @@
-# 🛡 Security Platform
+# Security Platform
 
-![Security Platform](docs/images/security-platform-logo.svg)
+<p align="center">
+  <img src="docs/images/security-platform-logo.svg" alt="Security Platform" width="420" />
+</p>
 
-Security Platform — единая корпоративная платформа управления физической безопасностью предприятия.
+<p align="center">
+  <strong>Единая корпоративная платформа для управления физической безопасностью предприятия.</strong>
+</p>
 
-Платформа предназначена для объединения различных сервисов службы безопасности в одном веб-приложении с общей архитектурой, единым интерфейсом и централизованным управлением.
-
-На текущий момент реализуется первый модуль:
-
-**✔ Contractor Requests**
-
-| Параметр | Значение |
-| --- | --- |
-| Current Release | v0.4.x |
-| Development Status | Active Development |
-| First Module | Contractor Requests |
-
----
-
-# 🎯 Цели проекта
-
-Security Platform создаётся как масштабируемая основа для автоматизации процессов физической безопасности и постепенного объединения сервисов службы безопасности в едином продукте.
-
-В будущем платформа должна объединять:
-
-- Contractor Requests
-- Access Control
-- CCTV
-- Visitor Management
-- Incident Management
-- Monitoring
-- Reports & Analytics
-- другие сервисы службы безопасности
-
-Ключевой принцип развития — модульная архитектура. Каждый новый сервис должен подключаться к общей платформенной инфраструктуре, использовать единые подходы к API, интерфейсу, данным и процессам разработки.
+<p align="center">
+  <img alt="Current Version" src="https://img.shields.io/badge/version-v0.9--dev-2089d6?style=for-the-badge" />
+  <img alt="React" src="https://img.shields.io/badge/React-18.3-61dafb?style=for-the-badge&logo=react&logoColor=111827" />
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-ready-4169e1?style=for-the-badge&logo=postgresql&logoColor=white" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.7-3178c6?style=for-the-badge&logo=typescript&logoColor=white" />
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ed?style=for-the-badge&logo=docker&logoColor=white" />
+  <img alt="Enterprise Architecture" src="https://img.shields.io/badge/Enterprise-Architecture-0d253f?style=for-the-badge" />
+</p>
 
 ---
 
-# 🏗 Архитектура
+## Overview
+
+**Security Platform** — это модульная enterprise-платформа для цифровизации процессов физической безопасности. Она объединяет внутреннюю рабочую область службы безопасности, администрирование, управление заявками подрядчикам, портал подрядчика, уведомления, аудит и интеграционные настройки в единую экосистему.
+
+Платформа не является отдельным модулем Contractor Requests. Contractor Requests — первый производственный модуль внутри общей архитектуры Security Platform. Поверх общей базы уже реализованы authentication, RBAC, cookie sessions, CSRF, administration, Contractor Portal, operational Dashboard и безопасная модель доступа к данным.
+
+## Platform Vision
+
+Security Platform создаётся для устранения типичных проблем корпоративной физической безопасности:
+
+- разрозненные системы и разные интерфейсы;
+- дублирование справочников, пользователей и подрядчиков;
+- ручные workflow без единого контроля статусов;
+- отсутствие централизованного мониторинга;
+- сложность аудита действий и доступа;
+- слабая прозрачность сроков, назначений и результатов работ.
+
+Платформа формирует единое рабочее пространство для службы безопасности и постепенно объединяет:
+
+- Contractor Requests;
+- Access Control;
+- CCTV;
+- Visitor Management;
+- Incident Management;
+- Monitoring;
+- Notifications;
+- Analytics;
+- Reports.
+
+## Platform Modules
+
+| Module | Description | Status |
+| --- | --- | --- |
+| Contractor Requests | Управление заявками подрядчикам, назначениями, сроками, вложениями, комментариями и результатами работ. | ✅ Completed |
+| Contractor Portal | Защищённая рабочая область подрядчика для просмотра назначений, задач, уведомлений и профиля. | ✅ Completed |
+| Operations Dashboard | Внутренний центр управления безопасностью: KPI, внимание, сроки, подрядчики, события, статусы сервисов. | ✅ Completed |
+| Administration | Компании, пользователи, роли, справочники, уведомления, аудит, подключения и состояние сервисов. | ✅ Completed |
+| Identity & Access | Cookie authentication, RBAC, permission matrix, password lifecycle, local/LDAP/ADFS-ready модель. | ✅ Completed |
+| Notification Center | Административные уведомления и отображение критичных событий в рабочей области. | ✅ Completed |
+| Access Control | Управление доступом, зонами и событиями СКУД. | 🟡 Planned |
+| CCTV | Интеграция видеонаблюдения и мониторинг событий. | 🟡 Planned |
+| Visitor Management | Регистрация посетителей, пропуска и сопровождение. | 🟡 Planned |
+| Incident Management | Регистрация, расследование и контроль инцидентов. | 🟡 Planned |
+| Reporting & Analytics | Отчёты, аналитика и управленческие показатели. | 🟡 Planned |
+
+## Architecture
 
 ```mermaid
 flowchart TD
-    SP[Security Platform]
-    FE[Frontend<br/>React + TypeScript]
-    API[Backend API<br/>FastAPI]
-    SVC[Services]
-    REP[Repositories]
-    DB[(PostgreSQL)]
-
-    SP --> FE
-    FE --> API
-    API --> SVC
-    SVC --> REP
-    REP --> DB
-
-    SP --> MOD[Modules]
-    MOD --> CR[Contractor Requests]
-    MOD --> AC[Access Control]
-    MOD --> CCTV[CCTV]
-    MOD --> VM[Visitor Management]
-    MOD --> MON[Monitoring]
-    MOD --> RPT[Reports]
+    Browser[Internal Workspace / Contractor Portal] --> Frontend[Frontend<br/>React + TypeScript + Vite]
+    Frontend --> API[REST API<br/>FastAPI]
+    API --> Auth[Authentication<br/>Cookie Session + CSRF]
+    Auth --> RBAC[RBAC & Permissions]
+    RBAC --> Workflows[Workflow Services<br/>Requests + Assignments + Collaboration]
+    Workflows --> Notifications[Notification Center]
+    Workflows --> Audit[Audit Foundation]
+    API --> Admin[Administration Services]
+    API --> Integrations[Connection Configuration<br/>LDAP + ADFS + SMTP]
+    Notifications --> DB[(PostgreSQL)]
+    Audit --> DB
+    Admin --> DB
+    Workflows --> DB
+    Integrations --> DB
 ```
 
 ```mermaid
 flowchart LR
-    Platform[Security Platform]
-    Platform --> Core[Core Platform]
+    Platform[Security Platform] --> Internal[Internal Workspace]
+    Platform --> Portal[Contractor Portal]
+    Platform --> Core[Core Platform Services]
     Platform --> Modules[Business Modules]
 
-    Core --> API[Backend API]
-    Core --> UI[Frontend Shell]
-    Core --> DB[(PostgreSQL)]
-    Core --> DX[Developer Toolkit]
+    Core --> Auth[Authentication]
+    Core --> RBAC[RBAC]
+    Core --> Admin[Administration]
+    Core --> Audit[Audit]
+    Core --> Notifications[Notifications]
+    Core --> Integrations[Connection Configuration]
 
-    Modules --> Contractor[Contractor Requests<br/>MVP]
-    Modules --> Access[Access Control<br/>Planned]
-    Modules --> Cameras[CCTV<br/>Planned]
-    Modules --> Visitors[Visitor Management<br/>Planned]
-    Modules --> Incidents[Incident Management<br/>Planned]
-    Modules --> Monitoring[Monitoring<br/>Planned]
-    Modules --> Reports[Reports & Analytics<br/>Planned]
+    Modules --> Requests[Contractor Requests]
+    Modules --> Dashboard[Operations Dashboard]
+    Modules --> Future[Future Enterprise Modules]
 ```
 
-Исходные Mermaid-файлы: [architecture.mmd](docs/images/architecture.mmd) и [modules.mmd](docs/images/modules.mmd).
+Исходные Mermaid-файлы также находятся в [`docs/images`](docs/images).
 
-Архитектура разделяет пользовательский интерфейс, API, сервисную логику, слой доступа к данным и PostgreSQL. Модули развиваются поверх общей платформенной базы, что позволяет добавлять новые домены без превращения репозитория в набор несвязанных приложений.
-
-Подробнее: [Architecture](docs/ARCHITECTURE.md).
-
----
-
-# 📦 Реализованные возможности
-
-## Core Platform
-
-| Возможность | Статус |
-| --- | --- |
-| FastAPI | ✅ |
-| React | ✅ |
-| TypeScript | ✅ |
-| PostgreSQL | ✅ |
-| Alembic | ✅ |
-| Swagger | ✅ |
-| Docker Compose | ✅ |
-| Design System | ✅ |
-| Demo Seed | ✅ |
-| Health Check | ✅ |
-| Developer Toolkit | ✅ |
-| Start/Stop Scripts | ✅ |
-
-## Contractor Requests
-
-| Возможность | Статус |
-| --- | --- |
-| Reference Data | ✅ |
-| Contractor Requests API | ✅ |
-| Assignment Engine | ✅ |
-| Multiple Work Types | ✅ |
-| Demo Data | ✅ |
-| Contractor API | ✅ |
-| Automated Tests | ✅ |
-
----
-
-# 🛣 Roadmap
-
-| Версия | Возможности | Статус |
-| --- | --- | --- |
-| v0.4.x | Security Platform Foundation | ✅ |
-| v0.5 | Workflow Engine<br>Draft<br>Status Engine<br>History | 🟡 |
-| v0.6 | Attachments<br>Comments<br>Notifications | 🟡 |
-| v0.7 | Authentication<br>Roles<br>Permissions | 🟡 |
-| v0.8 | Contractor Portal | 🟡 |
-| v0.9 | Monitoring<br>Analytics | 🟡 |
-| v1.0 | Production Release | ⬜ |
-
-Подробнее: [Roadmap](docs/ROADMAP.md).
-
----
-
-# ⚙ Technology Stack
+## Technology Stack
 
 | Area | Technologies |
 | --- | --- |
-| Backend | Python, FastAPI, SQLAlchemy, Alembic, PostgreSQL, Pydantic, uv |
+| Backend | Python, FastAPI, SQLAlchemy, Alembic, Pydantic, PostgreSQL, uv |
 | Frontend | React, TypeScript, Vite, Ant Design, Axios, React Router |
-| Infrastructure | Docker Compose, PowerShell, Swagger/OpenAPI, GitHub |
+| Infrastructure | Docker Compose, Nginx-ready deployment model, PowerShell scripts, GitHub |
+| Security | Cookie Authentication, CSRF, RBAC, Tenant Isolation, Password Policies, Audit Foundation |
+| Documentation | Markdown, Mermaid, OpenAPI / Swagger |
 
----
+## Current Features
 
-# 🚀 Быстрый запуск
+### Authentication
 
-Перед запуском убедитесь, что порты `3000` и `8000` свободны.
+- ✅ Local login with secure cookie session.
+- ✅ HttpOnly cookie-based authentication.
+- ✅ CSRF protection for state-changing requests.
+- ✅ `/auth/me`, login, logout, refresh-ready session lifecycle.
+- ✅ Password change flow for temporary and expired passwords.
+- ✅ LDAP / ADFS configuration model.
 
-| Сценарий | Команда |
+### Administration
+
+- ✅ Companies / contractors management.
+- ✅ Internal and contractor users.
+- ✅ Roles and permission matrix.
+- ✅ Reference data: cities, facilities, premises, work types, responsibility zones.
+- ✅ Connection configuration for LDAP, ADFS and SMTP.
+- ✅ System status and administrative notifications.
+- ✅ Audit foundation for administrative and workflow events.
+
+### Workflow
+
+- ✅ Contractor request lifecycle.
+- ✅ Draft, publish, assignment and status transitions.
+- ✅ Multiple work types per request.
+- ✅ Contractor assignments.
+- ✅ Comments and attachments.
+- ✅ Work results.
+- ✅ Request history.
+- ✅ Deadline and overdue tracking.
+
+### Contractor Portal
+
+- ✅ Protected contractor workspace.
+- ✅ Contractor Dashboard.
+- ✅ Requests and task workspace.
+- ✅ Notifications.
+- ✅ Contractor profile.
+- ✅ Request detail view with comments, attachments, results and history.
+- ✅ Tenant-safe contractor data access.
+
+### Dashboard
+
+- ✅ Security Operations Center at `/`.
+- ✅ Attention-required cards.
+- ✅ KPI metrics for requests, contractors and assignments.
+- ✅ Request operations workspace.
+- ✅ Status distribution.
+- ✅ Contractor summary.
+- ✅ Deadlines and recent activity.
+- ✅ Platform service status.
+- ✅ Permission-aware quick actions.
+
+### Security
+
+- ✅ Cookie Authentication.
+- ✅ CSRF protection.
+- ✅ RBAC and permission matrix.
+- ✅ Password policy and password lifecycle.
+- ✅ Session invalidation on logout.
+- ✅ Tenant isolation for contractor data.
+- ✅ Safe DTOs for contractor-facing APIs.
+- ✅ Least privilege route guards.
+
+## Security
+
+Security Platform is designed around explicit security boundaries and permission-aware workflows.
+
+| Security Area | Implementation |
 | --- | --- |
-| Обычный запуск | `.\start-dev.cmd` |
-| Принудительный перезапуск только процессов этого проекта | `powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -ForceRestart` |
-| Запуск с demo seed | `powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -Seed` |
-| Остановка | `.\stop-dev.cmd` |
+| Cookie Authentication | Auth state is based on secure cookie sessions rather than localStorage tokens. |
+| CSRF | State-changing API requests use CSRF validation. |
+| RBAC | Roles are mapped to granular permissions and enforced by backend dependencies. |
+| Permission Matrix | Internal pages and actions are visible only when the user has the required permission. |
+| Password Policies | Local users follow password policy, temporary password flow and forced password change lifecycle. |
+| Session Management | Logout invalidates the active session and clears frontend auth state. |
+| Tenant Isolation | Contractor users only access data assigned to their company scope. |
+| Audit Foundation | Administrative and workflow events are recorded through audit/history models. |
+| Security Headers | Backend is structured for secure API operation behind the deployment layer. |
+| Least Privilege | Contractor roles are separated from internal platform roles. |
 
-Подробная инструкция: [Development Guide](docs/DEVELOPMENT.md).
+> Frontend visibility is not treated as a security boundary. Backend permission checks remain the source of truth.
 
----
+## Screenshots
 
-# 🌐 URL
-
-| Сервис | URL |
+| Area | Preview |
 | --- | --- |
-| Frontend | http://127.0.0.1:3000 |
-| Backend | http://127.0.0.1:8000 |
-| Swagger | http://127.0.0.1:8000/docs |
-| Health | http://127.0.0.1:8000/api/v1/health |
+| Dashboard | `docs/screenshots/dashboard.png` |
+| Contractor Portal | `docs/screenshots/contractor-portal.png` |
+| Administration | `docs/screenshots/administration.png` |
+| Companies | `docs/screenshots/companies.png` |
+| Users | `docs/screenshots/users.png` |
+| Requests | `docs/screenshots/requests.png` |
+| Notifications | `docs/screenshots/notifications.png` |
 
----
+> Screenshots can be added to `docs/screenshots/` as the product UI is reviewed and approved.
 
-# 📁 Структура проекта
+## Roadmap
+
+| Version | Scope | Status |
+| --- | --- | --- |
+| v0.4 Foundation | Core FastAPI / React foundation, PostgreSQL model, migrations, Docker Compose, developer scripts. | ✅ Completed |
+| v0.5 Workflow | Contractor Requests workflow, request statuses, assignment model, history. | ✅ Completed |
+| v0.6 Collaboration | Attachments, comments, work results, request collaboration surface. | ✅ Completed |
+| v0.7 Identity & Administration | Authentication, RBAC, users, roles, permissions, password lifecycle, connection configuration. | ✅ Completed |
+| v0.8 Contractor Portal & Dashboard | Contractor Portal, protected contractor routes, operational internal Dashboard foundation. | ✅ Completed |
+| v0.9 Operations Center | Enterprise UX unification, Security Operations Center, aggregate dashboard API, platform-wide internal workspace. | 🔵 Current |
+| v1.0 Production Release | Production hardening, deployment documentation, monitoring, final QA and release governance. | 🟡 Planned |
+
+## Project Structure
 
 ```text
 .
 ├── backend/
+│   ├── alembic/
+│   ├── app/
+│   └── tests/
 ├── frontend/
-├── scripts/
+│   ├── public/
+│   └── src/
 ├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── ROADMAP.md
-│   ├── ERD.md
+│   ├── images/
 │   ├── API_GUIDELINES.md
+│   ├── ARCHITECTURE.md
 │   ├── DEVELOPMENT.md
-│   ├── README.md
-│   └── images/
+│   ├── ERD.md
+│   └── ROADMAP.md
+├── scripts/
 ├── docker-compose.yml
+├── start-dev.cmd
+├── stop-dev.cmd
 └── README.md
 ```
 
----
+## Getting Started
 
-# 📌 Модули платформы
+### Development
 
-| Модуль | Статус |
+Перед запуском убедитесь, что порты `3000` и `8000` свободны.
+
+| Scenario | Command |
 | --- | --- |
-| Contractor Requests | ✅ MVP |
-| Access Control | 🚧 Planned |
-| CCTV | 🚧 Planned |
-| Visitor Management | 🚧 Planned |
-| Incident Management | 🚧 Planned |
-| Monitoring | 🚧 Planned |
-| Reports & Analytics | 🚧 Planned |
+| Обычный запуск | `.\start-dev.cmd` |
+| Запуск с demo seed | `powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -Seed` |
+| Принудительный перезапуск только процессов этого проекта | `powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -ForceRestart` |
+| Остановка | `.\stop-dev.cmd` |
 
----
+### Docker
 
-# 🔄 Development Workflow
+```bash
+docker compose up --build
+```
+
+### Backend
+
+```bash
+cd backend
+uv run alembic upgrade head
+uv run fastapi dev app/main.py
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev -- --host 127.0.0.1 --port 3000
+```
+
+### Seed Demo
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -Seed
+```
+
+### Admin Login
+
+Demo credentials are created by the development seed. Use the seeded internal Platform Admin account for local verification.
+
+| Service | URL |
+| --- | --- |
+| Frontend | http://127.0.0.1:3000 |
+| Backend API | http://127.0.0.1:8000 |
+| Swagger | http://127.0.0.1:8000/docs |
+| Health | http://127.0.0.1:8000/api/v1/health |
+
+## Version History
+
+| Version | Highlights |
+| --- | --- |
+| v0.4 | Platform foundation, backend/frontend shell, migrations, Docker Compose, demo seed. |
+| v0.5 | Contractor Requests workflow, statuses, assignments, request history. |
+| v0.6 | Collaboration layer: attachments, comments, work results and notifications foundation. |
+| v0.7 | Identity and administration: users, roles, permissions, password lifecycle, LDAP/ADFS/SMTP configuration model. |
+| v0.8 | Contractor Portal, protected contractor workspace, Dashboard foundation. |
+| v0.9 | Operations Center, aggregate Dashboard API, enterprise UX/UI unification and platform workspace refinement. |
+
+## Future Modules
+
+- Access Control
+- Video Surveillance
+- Visitor Management
+- Incident Response
+- Monitoring
+- Reporting
+- Analytics
+- Mobile Client
+- API Gateway
+
+## Documentation
+
+| Document | Description |
+| --- | --- |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Архитектурное описание платформы. |
+| [`docs/API_GUIDELINES.md`](docs/API_GUIDELINES.md) | Подходы к API и контрактам. |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Инструкции для локальной разработки. |
+| [`docs/ERD.md`](docs/ERD.md) | Модель данных и связи сущностей. |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | План развития продукта. |
+| `docs/security.md` | Будущая документация по security controls. |
+| `docs/deployment.md` | Будущая документация по production deployment. |
+
+<details>
+<summary>Development Workflow</summary>
 
 ```mermaid
 flowchart LR
-    Feature[Feature Branch] --> Develop[Develop]
-    Develop --> Review[Review]
-    Review --> Main[Main]
-    Main --> Release[Release]
+    Feature[Feature Branch] --> Review[Code Review]
+    Review --> Validation[Build & Tests]
+    Validation --> Main[Mainline]
+    Main --> Release[Release Candidate]
+    Release --> Production[Production Release]
 ```
 
-Базовый процесс: создать feature-ветку, выполнить разработку, проверить изменения локально, открыть Pull Request, пройти review и выполнить merge в `develop` в соответствии с принятой Git Flow-моделью.
+</details>
+
+## License
+
+Internal Corporate Project.
 
 ---
 
-# 📄 License
-
-Internal Corporate Project.
+<p align="center">
+  <strong>Security Platform</strong><br />
+  Enterprise Physical Security Platform<br />
+  Designed for enterprise physical security operations.
+</p>
