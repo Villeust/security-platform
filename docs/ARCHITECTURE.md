@@ -86,3 +86,11 @@ Security Platform is designed to scale by adding modules around a shared core:
 - clear roadmap for workflow, authentication, notifications, monitoring and reports.
 
 The goal is to grow Security Platform into a portfolio of security services while keeping operational and development practices unified.
+
+## Workflow Engine And Workflow Center
+
+The generic Workflow Engine is a platform service, not a Contractor Requests subsystem. Its persistence model stores workflow definitions, states, transitions, instances, transition executions, SLA policies and timers, idempotency records and outbox events. Business modules connect through adapter boundaries so the engine can observe and validate module entities without taking over module APIs.
+
+Workflow Center is the administrative and operational surface for that engine. It is exposed under `/api/v1/admin/workflow-center` and `/admin/workflow-center`, guarded by existing RBAC permissions such as `workflows.view`, `workflows.manage`, `workflows.publish`, `workflows.instances.view` and `workflows.sla.view`. Read views are generic and safe for operators: definition catalog, version list, validation, instance explorer, SLA center, outbox monitor, process audit and platform health.
+
+Phase 3 deliberately does not redesign Contractor Requests. Existing request APIs, approved statuses, assignment workflow, request history, Contractor Portal behavior, authentication, RBAC and tenant isolation remain the source of truth. The architecture keeps room for future parallel workflows, sub-workflows, scheduled transitions, event-driven transitions, external integrations and BPMN-like execution without implementing those capabilities in this phase.

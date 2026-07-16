@@ -18,6 +18,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { PlatformLogo } from '../components/branding';
 import { Button, StatusBadge } from '../components/design-system';
+import { APP_VERSION } from '../config/version';
 import { DEV_USER_SELECTOR_ENABLED, useAuth } from '../context/AuthContext';
 import { roleLabel } from '../features/dashboard/constants';
 
@@ -113,7 +114,7 @@ export function AppLayout({ children }: PropsWithChildren) {
           {!collapsed ? (
             <>
               <Typography.Text>Security Platform</Typography.Text>
-              <Typography.Text type="secondary">Версия 0.1.0</Typography.Text>
+              <Typography.Text type="secondary">v{APP_VERSION}</Typography.Text>
             </>
           ) : null}
         </div>
@@ -179,7 +180,6 @@ export function AppLayout({ children }: PropsWithChildren) {
           </div>
         </Layout.Header>
         <Layout.Content className="sp-content">{children}</Layout.Content>
-        <Layout.Footer className="sp-footer">Security Platform</Layout.Footer>
       </Layout>
     </Layout>
   );

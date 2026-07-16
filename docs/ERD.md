@@ -23,6 +23,17 @@ erDiagram
     Facility ||--o{ ContractorResponsibility : facility_scope
     WorkType ||--o{ ContractorResponsibility : work_scope
 
+    WorkflowDefinition ||--o{ WorkflowState : owns
+    WorkflowDefinition ||--o{ WorkflowTransition : owns
+    WorkflowDefinition ||--o{ WorkflowSlaPolicy : owns
+    WorkflowDefinition ||--o{ WorkflowInstance : starts
+    WorkflowState ||--o{ WorkflowTransition : from_state
+    WorkflowState ||--o{ WorkflowTransition : to_state
+    WorkflowState ||--o{ WorkflowInstance : current_state
+    WorkflowInstance ||--o{ WorkflowTransitionExecution : logs
+    WorkflowInstance ||--o{ WorkflowSlaTimer : tracks
+    WorkflowSlaPolicy ||--o{ WorkflowSlaTimer : creates
+
     City {
         uuid id PK
         string name
@@ -132,6 +143,92 @@ erDiagram
         boolean is_active
         datetime created_at
     }
+
+    WorkflowDefinition {
+        uuid id PK
+        string code
+        string name
+        string entity_type
+        int version
+        boolean is_active
+        boolean is_published
+        datetime published_at
+    }
+
+    WorkflowState {
+        uuid id PK
+        uuid workflow_definition_id FK
+        string code
+        string name
+        enum state_type
+        boolean is_initial
+        boolean is_terminal
+        boolean is_active
+    }
+
+    WorkflowTransition {
+        uuid id PK
+        uuid workflow_definition_id FK
+        uuid from_state_id FK
+        uuid to_state_id FK
+        string code
+        string name
+        string permission_code
+        boolean is_active
+    }
+
+    WorkflowInstance {
+        uuid id PK
+        uuid workflow_definition_id FK
+        uuid current_state_id FK
+        string entity_type
+        uuid entity_id
+        string instance_key
+        int workflow_version
+        int lock_version
+        datetime started_at
+        datetime completed_at
+    }
+
+    WorkflowTransitionExecution {
+        uuid id PK
+        uuid workflow_instance_id FK
+        uuid transition_id FK
+        uuid from_state_id FK
+        uuid to_state_id FK
+        enum actor_type
+        uuid actor_id
+        string correlation_id
+        datetime created_at
+    }
+
+    WorkflowSlaPolicy {
+        uuid id PK
+        uuid workflow_definition_id FK
+        uuid state_id FK
+        uuid transition_id FK
+        string code
+        int duration_minutes
+        boolean is_active
+    }
+
+    WorkflowSlaTimer {
+        uuid id PK
+        uuid workflow_instance_id FK
+        uuid sla_policy_id FK
+        datetime due_at
+        enum status
+    }
+
+    DomainEventOutbox {
+        uuid id PK
+        string event_type
+        string aggregate_type
+        uuid aggregate_id
+        enum status
+        int attempts
+        datetime created_at
+    }
 ```
 
 ## Notes
@@ -139,3 +236,5 @@ erDiagram
 - `RequestWorkType` is a real association table between requests and work types.
 - `ContractorResponsibility` is used by the assignment logic to find the contractor responsible for a work type in a city or facility scope.
 - `ContractorUser` links platform users to contractors; user identity storage is not represented here because a dedicated user entity is not present in the current codebase.
+- Workflow tables are generic platform entities. Contractor Requests is one workflow-enabled module, but the workflow schema is not tied to request-only business logic.
+- `DomainEventOutbox` stores event payloads for backend delivery; Workflow Center exposes only safe metadata, not raw payloads.

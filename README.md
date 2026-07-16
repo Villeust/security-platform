@@ -147,6 +147,13 @@ flowchart LR
 - ✅ Work results.
 - ✅ Request history.
 - ✅ Deadline and overdue tracking.
+- ✅ Generic Workflow Engine foundation with definitions, states, transitions, instances, execution log, SLA timers, idempotency, optimistic locking and outbox events.
+- ✅ Workflow Center admin workspace for process definitions, versions, validation, instance explorer, SLA, outbox monitoring, audit and platform health.
+- ✅ Contractor Requests remains on the approved business APIs and status behavior while the generic engine records and monitors the lifecycle.
+
+### Workflow Center
+
+Workflow Center is available under `/admin/workflow-center` for users with workflow permissions. The UI is intentionally generic: it operates on workflow definitions and instances without embedding Contractor Request business rules. Phase 3 adds read-only operational views plus protected definition lifecycle API endpoints; it does not add Phase 4 automation, BPMN execution, external integrations, scheduled transitions or visual diagram editing.
 
 ### Contractor Portal
 

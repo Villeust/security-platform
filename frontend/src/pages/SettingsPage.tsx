@@ -2,6 +2,7 @@ import { CheckCircleOutlined, ClockCircleOutlined, DesktopOutlined, GlobalOutlin
 import { Descriptions, Segmented, Tag, Typography } from 'antd';
 
 import { PlatformCard, PlatformPage, PlatformPageHeader, PlatformSection, StatusPill } from '../components/design-system';
+import { APP_VERSION } from '../config/version';
 import { useAppTheme } from '../context/ThemeContext';
 
 export function SettingsPage() {
@@ -80,7 +81,7 @@ export function SettingsPage() {
                 <Typography.Text type="secondary">Внутренняя рабочая область Security Platform</Typography.Text>
                 <div className="sp-settings-tags">
                   <StatusPill label={`Окружение: ${import.meta.env.DEV ? 'Разработка' : 'Production'}`} tone="info" />
-                  <StatusPill label="Версия 0.1.0" tone="neutral" />
+                  <StatusPill label={`v${APP_VERSION}`} tone="neutral" />
                 </div>
               </div>
             </div>

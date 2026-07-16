@@ -23,6 +23,7 @@ import { ContractorProfilePage } from './features/contractor-portal/ContractorPr
 import { ContractorRequestDetailPage as ContractorPortalRequestDetailPage } from './features/contractor-portal/ContractorRequestDetailPage';
 import { ContractorRequestsPage } from './features/contractor-portal/ContractorRequestsPage';
 import { ContractorTasksPage } from './features/contractor-portal/ContractorTasksPage';
+import { WorkflowCenterPage, WorkflowDefinitionDetailPage, WorkflowInstanceDetailPage } from './features/workflow-center/WorkflowCenterPage';
 import { AppLayout } from './layouts/AppLayout';
 import { ApplicationsPage } from './pages/ApplicationsPage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
@@ -93,6 +94,17 @@ export function App() {
             <Route path="/admin/connections/directory-groups" element={<Shell><PermissionRoute permission="admin.directory_groups.view"><AdminShell><AdminConnectionsPage tab="groups" /></AdminShell></PermissionRoute></Shell>} />
             <Route path="/admin/connections/auth-mappings" element={<Shell><PermissionRoute permission="admin.auth_mappings.view"><AdminShell><AdminConnectionsPage tab="mappings" /></AdminShell></PermissionRoute></Shell>} />
             <Route path="/admin/connections/logs" element={<Shell><PermissionRoute permission="admin.connection_logs.view"><AdminShell><AdminConnectionsPage tab="logs" /></AdminShell></PermissionRoute></Shell>} />
+            <Route path="/admin/workflow-center" element={<Shell><PermissionRoute permission="workflows.instances.view"><AdminShell><WorkflowCenterPage page="dashboard" /></AdminShell></PermissionRoute></Shell>} />
+            <Route path="/admin/workflow-center/definitions" element={<Shell><PermissionRoute permission="workflows.view"><AdminShell><WorkflowCenterPage page="definitions" /></AdminShell></PermissionRoute></Shell>} />
+            <Route path="/admin/workflow-center/definitions/:definitionId" element={<Shell><PermissionRoute permission="workflows.view"><AdminShell><WorkflowDefinitionDetailPage /></AdminShell></PermissionRoute></Shell>} />
+            <Route path="/admin/workflow-center/versions" element={<Shell><PermissionRoute permission="workflows.view"><AdminShell><WorkflowCenterPage page="versions" /></AdminShell></PermissionRoute></Shell>} />
+            <Route path="/admin/workflow-center/validation" element={<Shell><PermissionRoute permission="workflows.view"><AdminShell><WorkflowCenterPage page="validation" /></AdminShell></PermissionRoute></Shell>} />
+            <Route path="/admin/workflow-center/instances" element={<Shell><PermissionRoute permission="workflows.instances.view"><AdminShell><WorkflowCenterPage page="instances" /></AdminShell></PermissionRoute></Shell>} />
+            <Route path="/admin/workflow-center/instances/:instanceId" element={<Shell><PermissionRoute permission="workflows.instances.view"><AdminShell><WorkflowInstanceDetailPage /></AdminShell></PermissionRoute></Shell>} />
+            <Route path="/admin/workflow-center/sla" element={<Shell><PermissionRoute permission="workflows.sla.view"><AdminShell><WorkflowCenterPage page="sla" /></AdminShell></PermissionRoute></Shell>} />
+            <Route path="/admin/workflow-center/outbox" element={<Shell><PermissionRoute permission="workflows.instances.view"><AdminShell><WorkflowCenterPage page="outbox" /></AdminShell></PermissionRoute></Shell>} />
+            <Route path="/admin/workflow-center/audit" element={<Shell><PermissionRoute permission="workflows.view"><AdminShell><WorkflowCenterPage page="audit" /></AdminShell></PermissionRoute></Shell>} />
+            <Route path="/admin/workflow-center/health" element={<Shell><PermissionRoute permission="workflows.instances.view"><AdminShell><WorkflowCenterPage page="health" /></AdminShell></PermissionRoute></Shell>} />
             <Route path="/settings" element={<Shell><SettingsPage /></Shell>} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

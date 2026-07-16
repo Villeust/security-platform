@@ -132,6 +132,38 @@ Run:
 uv run python -m app.scripts.platform_doctor --fix
 ```
 
+## Workflow Center
+
+Workflow Center is available in the admin shell at:
+
+```text
+/admin/workflow-center
+```
+
+Backend API prefix:
+
+```text
+/api/v1/admin/workflow-center
+```
+
+Useful development checks from the backend directory:
+
+```bash
+uv run pytest tests/test_workflow_center_api.py
+uv run python -m app.scripts.platform_doctor
+uv run alembic upgrade head
+uv run python -m app.scripts.seed_demo
+uv run python -m app.scripts.seed_demo
+```
+
+Frontend validation from the frontend directory:
+
+```bash
+npm run build
+```
+
+Phase 3 scope is limited to the generic administrative and operational surface. Do not add Phase 4 automation, scheduled transitions, event-driven transitions, external integrations, BPMN execution or visual diagram authoring as part of Workflow Center maintenance.
+
 ## Seed
 
 Demo seed can be executed explicitly from the backend directory:

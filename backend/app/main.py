@@ -9,6 +9,7 @@ from app.api.v1.health import router as health_router
 from app.api.v1.reference_data import router as reference_data_router
 from app.api.v1.requests import router as requests_router
 from app.api.v1.workflows import router as workflows_router
+from app.api.v1.workflow_center import router as workflow_center_router
 from app.core.config import settings
 from app.services.contractor_request_workflow import register_contractor_request_workflow_adapter
 
@@ -41,6 +42,7 @@ app.include_router(requests_router, prefix=settings.api_v1_prefix)
 app.include_router(contractor_router, prefix=settings.api_v1_prefix)
 app.include_router(dashboard_router, prefix=settings.api_v1_prefix)
 app.include_router(workflows_router, prefix=settings.api_v1_prefix)
+app.include_router(workflow_center_router, prefix=settings.api_v1_prefix)
 app.include_router(admin_router, prefix=settings.api_v1_prefix)
 app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(connections_router, prefix=settings.api_v1_prefix)
