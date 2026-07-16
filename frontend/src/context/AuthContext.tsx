@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
+import { isAxiosError } from 'axios';
 
 import {
   changePassword as changePasswordRequest,
@@ -8,9 +9,12 @@ import {
   logout as logoutRequest,
 } from '../features/admin/services/adminService';
 import type { AdminUser, LoginResponse, Uuid } from '../features/admin/types';
+import { setDevUserHeader } from '../services/api';
 
-const STORAGE_KEY = 'security-platform.devUserId';
+const DEV_USER_STORAGE_KEY = 'security-platform.devUserId';
 export const DEV_USER_SELECTOR_ENABLED = import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEV_USER_SELECTOR === 'true';
+
+export type AuthStatus = 'loading' | 'unauthenticated' | 'authenticated' | 'password_change_required' | 'error';
 
 type LoginPayload = {
   username: string;
@@ -22,11 +26,13 @@ type AuthContextValue = {
   currentUser: AdminUser | null;
   devUsers: AdminUser[];
   loading: boolean;
-  status: 'authenticated' | 'unauthorized' | 'forbidden' | 'loading';
+  status: AuthStatus;
+  errorMessage: string | null;
   setDevUserId: (userId: Uuid) => void;
+  resetLocalSession: () => Promise<void>;
   login: (payload: LoginPayload) => Promise<LoginResponse>;
   logout: () => Promise<void>;
-  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string, newPasswordConfirmation: string) => Promise<void>;
   reload: () => Promise<void>;
   hasPermission: (code: string) => boolean;
   hasAnyPermission: (codes: string[]) => boolean;
@@ -34,22 +40,34 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function initialDevUserId() {
-  if (DEV_USER_SELECTOR_ENABLED) {
-    return localStorage.getItem(STORAGE_KEY) ?? import.meta.env.VITE_DEV_USER_ID ?? null;
+function statusForUser(user: AdminUser): AuthStatus {
+  return user.must_change_password || user.password_expired ? 'password_change_required' : 'authenticated';
+}
+
+function authErrorMessage(error: unknown) {
+  if (!isAxiosError(error) || !error.response) {
+    return 'Сервис авторизации недоступен. Проверьте подключение к backend.';
   }
-  return import.meta.env.VITE_DEV_USER_ID ?? null;
+  if (error.response.status >= 500) {
+    return 'Сервис авторизации временно недоступен. Попробуйте позже.';
+  }
+  return 'Сессия устарела. Выполните вход повторно.';
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
   const [devUsers, setDevUsers] = useState<AdminUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState<AuthContextValue['status']>('loading');
-  const [selectedUserId, setSelectedUserId] = useState<Uuid | null>(initialDevUserId);
+  const [status, setStatus] = useState<AuthStatus>('loading');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const clearDevAuthState = () => {
+    localStorage.removeItem(DEV_USER_STORAGE_KEY);
+    setDevUserHeader(null);
+  };
 
   const reload = async () => {
-    setLoading(true);
+    setStatus('loading');
+    setErrorMessage(null);
     try {
       const [devResult, currentResult] = await Promise.allSettled([
         DEV_USER_SELECTOR_ENABLED ? getDevUsers() : Promise.resolve([]),
@@ -57,57 +75,92 @@ export function AuthProvider({ children }: PropsWithChildren) {
       ]);
       if (devResult.status === 'fulfilled') {
         setDevUsers(devResult.value);
-        if (DEV_USER_SELECTOR_ENABLED && !selectedUserId && devResult.value[0]) {
-          localStorage.setItem(STORAGE_KEY, devResult.value[0].id);
-          setSelectedUserId(devResult.value[0].id);
-        }
       }
       if (currentResult.status === 'fulfilled') {
         setCurrentUser(currentResult.value);
-        setStatus('authenticated');
-      } else {
-        setCurrentUser(null);
-        setStatus('unauthorized');
+        setStatus(statusForUser(currentResult.value));
+        return;
       }
-    } finally {
-      setLoading(false);
+
+      const reason = currentResult.reason;
+      setCurrentUser(null);
+      clearDevAuthState();
+      if (isAxiosError(reason) && reason.response?.status === 401) {
+        setStatus('unauthenticated');
+        return;
+      }
+      if (isAxiosError(reason) && reason.response?.status === 403) {
+        setStatus('unauthenticated');
+        setErrorMessage('Сессия устарела. Выполните вход повторно.');
+        return;
+      }
+      setStatus('error');
+      setErrorMessage(authErrorMessage(reason));
+    } catch (caught) {
+      setCurrentUser(null);
+      setStatus('error');
+      setErrorMessage(authErrorMessage(caught));
     }
   };
 
   useEffect(() => {
+    clearDevAuthState();
     void reload();
-  }, [selectedUserId]);
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       currentUser,
       devUsers,
-      loading,
+      loading: status === 'loading',
       status,
+      errorMessage,
       setDevUserId: (userId) => {
-        localStorage.setItem(STORAGE_KEY, userId);
-        setSelectedUserId(userId);
+        if (!DEV_USER_SELECTOR_ENABLED) {
+          return;
+        }
+        localStorage.setItem(DEV_USER_STORAGE_KEY, userId);
+        setDevUserHeader(userId);
+        void reload();
+      },
+      resetLocalSession: async () => {
+        try {
+          await logoutRequest();
+        } catch {
+          // The goal is local recovery; stale cookies may already be invalid.
+        }
+        clearDevAuthState();
+        setCurrentUser(null);
+        setStatus('unauthenticated');
+        setErrorMessage(null);
       },
       login: async (payload) => {
+        clearDevAuthState();
         const response = await loginRequest(payload);
         setCurrentUser(response.user);
-        setStatus('authenticated');
+        setStatus(statusForUser(response.user));
+        setErrorMessage(null);
         return response;
       },
       logout: async () => {
-        await logoutRequest();
-        setCurrentUser(null);
-        setStatus('unauthorized');
+        try {
+          await logoutRequest();
+        } finally {
+          clearDevAuthState();
+          setCurrentUser(null);
+          setStatus('unauthenticated');
+          setErrorMessage(null);
+        }
       },
-      changePassword: async (currentPassword, newPassword) => {
-        await changePasswordRequest(currentPassword, newPassword);
+      changePassword: async (currentPassword, newPassword, newPasswordConfirmation) => {
+        await changePasswordRequest(currentPassword, newPassword, newPasswordConfirmation);
         await reload();
       },
       reload,
       hasPermission: (code) => Boolean(currentUser?.permissions.includes(code)),
       hasAnyPermission: (codes) => codes.some((code) => currentUser?.permissions.includes(code)),
     }),
-    [currentUser, devUsers, loading, status],
+    [currentUser, devUsers, status, errorMessage],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

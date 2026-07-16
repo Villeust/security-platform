@@ -107,13 +107,19 @@ def logout_all(response: Response, user: User = Depends(get_current_user_stub), 
     return MessageResponse(message="ok")
 
 
-@router.post("/change-password", response_model=MessageResponse)
-def change_password(payload: ChangePasswordRequest, session=Depends(get_current_session), db: Session = Depends(get_db)) -> MessageResponse:
+@router.post("/change-password", response_model=AuthMeResponse)
+def change_password(
+    payload: ChangePasswordRequest,
+    session=Depends(get_current_session),
+    _: None = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> AuthMeResponse:
     user = session.user
     change_local_password(db, user, payload.current_password, payload.new_password)
     session.must_change_password = False
     db.commit()
-    return MessageResponse(message="ok")
+    db.refresh(user)
+    return serialize_auth_user(user)
 
 
 @router.get("/adfs/login")

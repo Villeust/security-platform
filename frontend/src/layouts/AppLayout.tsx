@@ -65,6 +65,13 @@ export function AppLayout({ children }: PropsWithChildren) {
         options={auth.devUsers.map((user) => ({ value: user.id, label: `${user.display_name} (${user.username})` }))}
       />
       <Typography.Text type="secondary">Пользователь выбирается из seed-данных; роли и permissions загружаются из backend.</Typography.Text>
+      <Button
+        onClick={() => {
+          void auth.resetLocalSession().then(() => navigate('/login', { replace: true }));
+        }}
+      >
+        Сбросить локальную сессию
+      </Button>
     </div>
   ) : null;
 

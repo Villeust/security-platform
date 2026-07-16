@@ -178,10 +178,16 @@ def change_local_password(db: Session, user: User, current_password: str, new_pa
     user.password_changed_at = utc_now()
     user.password_expires_at = password_expires_at_from_now()
     user.password_expired_at = None
+    user.password_expiry_notified_at = None
     user.must_change_password = False
     user.failed_login_attempts = 0
-    write_audit(db, "PASSWORD_CHANGED", "User", user.id)
-    db.commit()
+    user.locked_until = None
+    if user.lock_reason == LockReason.TOO_MANY_FAILED_ATTEMPTS:
+        user.is_locked = False
+        user.lock_reason = None
+        user.locked_at = None
+    write_audit(db, "PASSWORD_CHANGED", "User", user.id, actor_id=user.id, actor_type="AUTH")
+    db.flush()
 
 
 def set_temporary_password(db: Session, user: User, temporary_password: str, actor_id: UUID | None = None) -> None:

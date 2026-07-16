@@ -23,7 +23,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { PermissionRoute, ProtectedRoute } from './routes/ProtectedRoute';
+import { LoginRoute, PasswordChangeRoute, PermissionRoute, ProtectedRoute } from './routes/ProtectedRoute';
 
 function Shell({ children }: { children: ReactNode }) {
   return (
@@ -45,8 +45,8 @@ export function App() {
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/profile/change-password" element={<ChangePasswordPage />} />
+            <Route path="/login" element={<LoginRoute><LoginPage /></LoginRoute>} />
+            <Route path="/profile/change-password" element={<PasswordChangeRoute><ChangePasswordPage /></PasswordChangeRoute>} />
             <Route path="/" element={<Shell><DashboardPage /></Shell>} />
             <Route path="/applications" element={<Shell><ApplicationsPage /></Shell>} />
             <Route path="/applications/contractor-requests" element={<Shell><PermissionRoute permission="requests.view"><ContractorRequestsListPage /></PermissionRoute></Shell>} />

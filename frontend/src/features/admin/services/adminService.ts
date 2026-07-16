@@ -45,8 +45,12 @@ export async function logout() {
   await api.post('/api/v1/auth/logout');
 }
 
-export async function changePassword(currentPassword: string, newPassword: string) {
-  await api.post('/api/v1/auth/change-password', { current_password: currentPassword, new_password: newPassword });
+export async function changePassword(currentPassword: string, newPassword: string, newPasswordConfirmation: string) {
+  await api.post('/api/v1/auth/change-password', {
+    current_password: currentPassword,
+    new_password: newPassword,
+    new_password_confirmation: newPasswordConfirmation,
+  });
 }
 
 export async function getDevUsers() {

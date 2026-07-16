@@ -32,6 +32,7 @@ DEMO_USERS = {
     "CONTRACTOR_MANAGER": ("dev.contractor.manager", "Contractor Manager", UserType.CONTRACTOR),
     "CONTRACTOR_USER": ("dev.contractor.user", "Contractor User", UserType.CONTRACTOR),
     "VIEWER": ("dev.viewer", "Viewer", UserType.INTERNAL),
+    "TEMP_USER": ("dev.temp.user", "Temporary Password User", UserType.INTERNAL),
 }
 DEMO_LOCAL_PASSWORD = "DevPassword123!"
 
@@ -164,6 +165,9 @@ def get_or_create_demo_user(
     db: Session,
     role_code: str,
     contractor_ids: list[UUID] | None = None,
+    must_change_on_create: bool = False,
+    force_password_ready: bool = True,
+    assigned_role_code: str | None = None,
 ) -> User:
     username, display_name, user_type = DEMO_USERS[role_code]
     user = db.scalar(select(User).where(User.username == username))
@@ -176,6 +180,10 @@ def get_or_create_demo_user(
             auth_source=AuthSource.LOCAL,
             is_active=True,
             is_locked=False,
+            password_hash=password_hasher.hash(DEMO_LOCAL_PASSWORD),
+            password_changed_at=utc_now(),
+            password_expires_at=password_expires_at_from_now(),
+            must_change_password=must_change_on_create,
         )
         db.add(user)
         db.flush()
@@ -185,12 +193,15 @@ def get_or_create_demo_user(
     user.is_active = True
     user.is_locked = False
     user.authentication_enabled = True
-    user.password_hash = password_hasher.hash(DEMO_LOCAL_PASSWORD)
-    user.password_changed_at = user.password_changed_at or utc_now()
-    user.password_expires_at = password_expires_at_from_now()
-    user.must_change_password = False
+    if not user.password_hash:
+        user.password_hash = password_hasher.hash(DEMO_LOCAL_PASSWORD)
+        user.password_changed_at = user.password_changed_at or utc_now()
+        user.password_expires_at = user.password_expires_at or password_expires_at_from_now()
+        user.must_change_password = must_change_on_create
+    if force_password_ready:
+        user.must_change_password = False
 
-    role = db.scalar(select(Role).where(Role.code == role_code))
+    role = db.scalar(select(Role).where(Role.code == (assigned_role_code or role_code)))
     if role is None:
         raise RuntimeError(f"Role {role_code} was not seeded")
     db.execute(delete(UserRole).where(UserRole.user_id == user.id))
@@ -284,6 +295,7 @@ def run_seed(db: Session | None = None) -> SeedResult:
             "contractor_manager": get_or_create_demo_user(session, "CONTRACTOR_MANAGER", [contractor_access.id, contractor_cctv.id]).id,
             "contractor_user": get_or_create_demo_user(session, "CONTRACTOR_USER", [contractor_access.id]).id,
             "viewer": get_or_create_demo_user(session, "VIEWER").id,
+            "temp_user": get_or_create_demo_user(session, "TEMP_USER", must_change_on_create=True, force_password_ready=False, assigned_role_code="VIEWER").id,
         }
         if owns_session:
             session.commit()
