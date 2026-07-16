@@ -20,7 +20,7 @@ export function PageHeader({ title, description, actions }: PageHeaderProps) {
           </Typography.Text>
         ) : null}
       </div>
-      {actions ? <Space>{actions}</Space> : null}
+      {actions ? <Space wrap className="sp-page-actions">{actions}</Space> : null}
     </div>
   );
 }

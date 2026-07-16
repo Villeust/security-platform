@@ -9,6 +9,7 @@ from app.services.admin_service import SYSTEM_ROLES, get_or_404
 from app.services.audit_service import write_audit
 
 PERMISSIONS: dict[str, tuple[str, str | None]] = {
+    "dashboard.view": ("View security operations dashboard", None),
     "admin.dashboard.view": ("View admin dashboard", None),
     "admin.contractors.view": ("View contractors", None),
     "admin.contractors.manage": ("Manage contractors", None),
@@ -78,6 +79,7 @@ SECURITY_ADMIN_PERMISSIONS = ALL_PERMISSION_CODES - {
 }
 
 SECURITY_OPERATOR_PERMISSIONS = {
+    "dashboard.view",
     "requests.view",
     "requests.create",
     "requests.update",
@@ -110,6 +112,7 @@ CONTRACTOR_MANAGER_PERMISSIONS = CONTRACTOR_PERMISSIONS | {
 }
 
 VIEWER_PERMISSIONS = {
+    "dashboard.view",
     "admin.dashboard.view",
     "requests.view",
     "reference_data.view",

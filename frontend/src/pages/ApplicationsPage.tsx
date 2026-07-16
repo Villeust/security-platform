@@ -1,30 +1,69 @@
-import { SafetyCertificateOutlined } from '@ant-design/icons';
+import {
+  BarChartOutlined,
+  IdcardOutlined,
+  SafetyCertificateOutlined,
+  UserSwitchOutlined,
+  VideoCameraOutlined,
+  WarningOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
-import { Button, Card, PageHeader, SearchBar, Section } from '../components/design-system';
+import { NavigationCard, PlatformPage, PlatformPageHeader, PlatformSection } from '../components/design-system';
+
+const plannedModules = [
+  {
+    icon: <UserSwitchOutlined />,
+    title: 'Управление доступом',
+    description: 'Контроль пропусков, зон доступа и согласований.',
+  },
+  {
+    icon: <VideoCameraOutlined />,
+    title: 'Видеонаблюдение',
+    description: 'Рабочее место мониторинга камер и событий.',
+  },
+  {
+    icon: <IdcardOutlined />,
+    title: 'Посетители',
+    description: 'Регистрация гостей, пропуска и сопровождение.',
+  },
+  {
+    icon: <WarningOutlined />,
+    title: 'Инциденты',
+    description: 'Регистрация и контроль расследования инцидентов.',
+  },
+  {
+    icon: <BarChartOutlined />,
+    title: 'Отчётность',
+    description: 'Операционные отчёты и аналитика безопасности.',
+  },
+];
 
 export function ApplicationsPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="sp-page">
-      <PageHeader title="Applications" description="Рабочие модули Security Platform." />
-      <Section title="Applications" actions={<SearchBar placeholder="Search applications" />}>
-        <div className="sp-app-grid">
-          <Card
-            title={
-              <span className="sp-card-title">
-                <SafetyCertificateOutlined /> Contractor Requests
-              </span>
-            }
-          >
-            <p className="sp-card-text">Заявки подрядчикам на направления СКУД и СВН.</p>
-            <Button type="primary" onClick={() => navigate('/applications/contractor-requests')}>
-              Открыть
-            </Button>
-          </Card>
+    <PlatformPage>
+      <PlatformPageHeader title="Модули" description="Рабочие модули Security Platform" />
+
+      <PlatformSection title="Доступные модули" description="Операционные разделы, доступные вашей роли.">
+        <div className="sp-module-grid">
+          <NavigationCard
+            icon={<SafetyCertificateOutlined />}
+            title="Заявки подрядчикам"
+            description="Назначение подрядчиков, контроль сроков, результатов работ, комментариев и вложений."
+            status="Доступно"
+            onClick={() => navigate('/applications/contractor-requests')}
+          />
         </div>
-      </Section>
-    </div>
+      </PlatformSection>
+
+      <PlatformSection title="Будущие направления" description="Разделы платформы, которые будут подключаться по мере развития продукта.">
+        <div className="sp-module-grid">
+          {plannedModules.map((item) => (
+            <NavigationCard key={item.title} icon={item.icon} title={item.title} description={item.description} status="Будет доступно позже" disabled />
+          ))}
+        </div>
+      </PlatformSection>
+    </PlatformPage>
   );
 }
