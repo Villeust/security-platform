@@ -1,11 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import ContractorAuthContext, require_contractor_permission
+from app.api.deps import ContractorAuthContext, require_contractor_permission, require_csrf
 from app.db.session import get_db
 from app.models.reference_data import Contractor
 from app.models.requests import (
@@ -25,6 +25,7 @@ from app.schemas.requests import (
     ContractorRequestListResponse,
     RequestHistoryItem,
 )
+from app.schemas.contractor_portal import ContractorCompany, ContractorDashboardResponse, ContractorMeResponse, ContractorNotificationResponse
 from app.services.request_service import change_assignment_status
 from app.services.attachment_service import (
     attachment_file_path,
@@ -155,23 +156,128 @@ def contractor_id_for_request(request: ContractorRequest, context: ContractorAut
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contractor context not found")
 
 
+def serialize_me(context: ContractorAuthContext) -> ContractorMeResponse:
+    if context.user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User context is required")
+    companies = [
+        ContractorCompany(
+            id=membership.contractor_id,
+            name=membership.contractor.name,
+            code=membership.contractor.code,
+            is_primary=membership.is_primary,
+        )
+        for membership in context.user.contractor_memberships
+        if membership.contractor_id in context.contractor_ids and membership.contractor is not None
+    ]
+    return ContractorMeResponse(
+        user_id=context.user.id,
+        username=context.user.username,
+        display_name=context.user.display_name,
+        email=context.user.email,
+        roles=sorted(context.roles or []),
+        permissions=sorted(context.permissions or []),
+        primary_contractor_id=context.primary_contractor_id,
+        contractors=companies,
+    )
+
+
+@router.get("/me", response_model=ContractorMeResponse, summary="Get current contractor portal context")
+def get_contractor_me(
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.portal.view")),
+) -> ContractorMeResponse:
+    return serialize_me(context)
+
+
+@router.get("/profile", response_model=ContractorMeResponse, summary="Get contractor profile")
+def get_contractor_profile(
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.profile.view")),
+) -> ContractorMeResponse:
+    return serialize_me(context)
+
+
+@router.get("/dashboard", response_model=ContractorDashboardResponse, summary="Get contractor dashboard")
+def get_contractor_dashboard(
+    db: Session = Depends(get_db),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.dashboard.view")),
+) -> ContractorDashboardResponse:
+    assignments = list(
+        db.scalars(
+            select(RequestAssignment)
+            .where(RequestAssignment.contractor_id.in_(context.contractor_ids))
+            .options(selectinload(RequestAssignment.request).selectinload(ContractorRequest.assignments))
+        ).all()
+    )
+    latest = list(
+        db.scalars(
+            select(ContractorRequest)
+            .join(RequestAssignment)
+            .where(RequestAssignment.contractor_id.in_(context.contractor_ids))
+            .options(selectinload(ContractorRequest.assignments), selectinload(ContractorRequest.work_types))
+            .order_by(ContractorRequest.created_at.desc())
+            .limit(5)
+        ).unique().all()
+    )
+    active_statuses = {AssignmentStatus.ASSIGNED, AssignmentStatus.ACCEPTED, AssignmentStatus.IN_PROGRESS}
+    return ContractorDashboardResponse(
+        active_requests=len({assignment.request_id for assignment in assignments if assignment.status in active_statuses}),
+        assigned_tasks=sum(1 for assignment in assignments if assignment.status == AssignmentStatus.ASSIGNED),
+        in_progress_tasks=sum(1 for assignment in assignments if assignment.status in {AssignmentStatus.ACCEPTED, AssignmentStatus.IN_PROGRESS}),
+        completed_tasks=sum(1 for assignment in assignments if assignment.status == AssignmentStatus.COMPLETED),
+        latest_requests=[serialize_contractor_request(item, context.contractor_ids).model_dump(mode="json") for item in latest],
+    )
+
+
+@router.get("/notifications", response_model=list[ContractorNotificationResponse], summary="List contractor notifications")
+def list_contractor_notifications(
+    _: ContractorAuthContext = Depends(require_contractor_permission("contractor.notifications.view")),
+) -> list[ContractorNotificationResponse]:
+    return []
+
+
 @router.get(
     "/requests",
     response_model=list[ContractorRequestListResponse],
     summary="List contractor-visible requests",
 )
 def list_contractor_requests(
+    request_status: RequestStatus | None = Query(default=None, alias="status"),
+    assignment_status: AssignmentStatus | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=128),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
     context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.view")),
 ) -> list[ContractorRequestListResponse]:
-    requests = db.scalars(
+    statement = (
         select(ContractorRequest)
         .join(RequestAssignment)
         .where(RequestAssignment.contractor_id.in_(context.contractor_ids))
         .options(selectinload(ContractorRequest.assignments), selectinload(ContractorRequest.work_types))
-        .order_by(ContractorRequest.created_at.desc())
-    ).unique().all()
+    )
+    if request_status is not None:
+        statement = statement.where(ContractorRequest.status == request_status)
+    if assignment_status is not None:
+        statement = statement.where(RequestAssignment.status == assignment_status)
+    if search:
+        like = f"%{search}%"
+        statement = statement.where(ContractorRequest.title.ilike(like) | ContractorRequest.request_number.ilike(like))
+    requests = db.scalars(statement.order_by(ContractorRequest.created_at.desc()).offset(skip).limit(limit)).unique().all()
     return [serialize_contractor_request(request, context.contractor_ids) for request in requests]
+
+
+@router.get("/tasks", response_model=list[ContractorAssignmentResponse], summary="List current contractor tasks")
+def list_contractor_tasks(
+    assignment_status: AssignmentStatus | None = Query(default=None, alias="status"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.view")),
+) -> list[ContractorAssignmentResponse]:
+    statement = select(RequestAssignment).where(RequestAssignment.contractor_id.in_(context.contractor_ids))
+    if assignment_status is not None:
+        statement = statement.where(RequestAssignment.status == assignment_status)
+    assignments = db.scalars(statement.order_by(RequestAssignment.updated_at.desc()).offset(skip).limit(limit)).all()
+    return [ContractorAssignmentResponse.model_validate(assignment) for assignment in assignments]
 
 
 @router.get("/requests/{request_id}", response_model=ContractorRequestListResponse, summary="Get contractor-visible request")
@@ -187,6 +293,7 @@ def get_contractor_request(
 def accept_contractor_request(
     request_id: UUID,
     db: Session = Depends(get_db),
+    _: None = Depends(require_csrf),
     context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.accept")),
 ) -> ContractorRequestListResponse:
     request = get_owned_request(db, request_id, context.contractor_ids)
@@ -213,6 +320,7 @@ def update_assignment_status(
     assignment_id: UUID,
     payload: AssignmentStatusUpdate,
     db: Session = Depends(get_db),
+    _: None = Depends(require_csrf),
     context: ContractorAuthContext = Depends(require_contractor_permission("contractor.requests.update_status")),
 ) -> ContractorAssignmentResponse:
     assignment = db.scalar(
@@ -296,6 +404,7 @@ def create_contractor_request_comment(
     request_id: UUID,
     payload: RequestCommentCreate,
     db: Session = Depends(get_db),
+    _: None = Depends(require_csrf),
     context: ContractorAuthContext = Depends(require_contractor_permission("contractor.comments.create")),
 ) -> RequestCommentResponse:
     request = get_owned_request(db, request_id, context.contractor_ids)
@@ -309,7 +418,8 @@ def update_contractor_request_comment(
     comment_id: UUID,
     payload: RequestCommentUpdate,
     db: Session = Depends(get_db),
-    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.comments.create")),
+    _: None = Depends(require_csrf),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.comments.update_own")),
 ) -> RequestCommentResponse:
     request = get_owned_request(db, request_id, context.contractor_ids)
     contractor_id = contractor_id_for_request(request, context)
@@ -322,7 +432,8 @@ def delete_contractor_request_comment(
     request_id: UUID,
     comment_id: UUID,
     db: Session = Depends(get_db),
-    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.comments.create")),
+    _: None = Depends(require_csrf),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.comments.delete_own")),
 ) -> RequestCommentResponse:
     request = get_owned_request(db, request_id, context.contractor_ids)
     contractor_id = contractor_id_for_request(request, context)
@@ -349,6 +460,7 @@ async def upload_contractor_request_attachment(
     assignment_id: UUID | None = Form(default=None),
     comment_id: UUID | None = Form(default=None),
     db: Session = Depends(get_db),
+    _: None = Depends(require_csrf),
     context: ContractorAuthContext = Depends(require_contractor_permission("contractor.attachments.upload")),
 ) -> RequestAttachmentResponse:
     request = get_owned_request(db, request_id, context.contractor_ids)
@@ -386,7 +498,8 @@ def delete_contractor_request_attachment(
     request_id: UUID,
     attachment_id: UUID,
     db: Session = Depends(get_db),
-    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.attachments.upload")),
+    _: None = Depends(require_csrf),
+    context: ContractorAuthContext = Depends(require_contractor_permission("contractor.attachments.delete_own")),
 ) -> RequestAttachmentResponse:
     request = get_owned_request(db, request_id, context.contractor_ids)
     attachment = get_attachment_or_404(db, request_id, attachment_id)

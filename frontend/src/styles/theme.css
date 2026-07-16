@@ -3,9 +3,517 @@
   --sp-blue: #2089d6;
   --sp-blue-dark: #166da9;
   --sp-ice: #eef7ff;
+  --contractor-sidebar: #0b2742;
+  --contractor-sidebar-soft: #123657;
+  --contractor-active: #1f8ed8;
+  --contractor-surface: #f5f8fb;
+  --contractor-card-border: #dfe8f1;
+  --contractor-muted: #667085;
+  --contractor-success: #2f9e44;
+  --contractor-warning: #f59f00;
+  --contractor-danger: #d64545;
   color: #20242a;
   background: #f7f8fa;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.contractor-shell {
+  background: var(--contractor-surface);
+}
+
+.contractor-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--contractor-sidebar) !important;
+}
+
+.contractor-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-height: 92px;
+  padding: 16px 12px 12px;
+  color: #d7e7f7;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.contractor-brand .ant-typography {
+  color: #d7e7f7;
+  font-size: 12px;
+}
+
+.contractor-menu.ant-menu-dark,
+.contractor-menu.ant-menu-dark .ant-menu-sub {
+  flex: 1;
+  background: var(--contractor-sidebar);
+}
+
+.contractor-menu .ant-menu-item {
+  margin-inline: 10px;
+  width: calc(100% - 20px);
+  border-radius: 8px;
+}
+
+.contractor-menu .ant-menu-item-selected {
+  background: var(--contractor-active) !important;
+}
+
+.contractor-sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 18px;
+  color: #d7e7f7;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.contractor-sidebar-footer .ant-typography {
+  color: #d7e7f7;
+  font-size: 12px;
+}
+
+.contractor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 72px;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--contractor-card-border);
+  background: #ffffff;
+}
+
+.contractor-header-left,
+.contractor-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.contractor-header-left h4.ant-typography {
+  margin: 0;
+}
+
+.contractor-header-logo {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+
+.contractor-avatar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid var(--contractor-card-border);
+  border-radius: 10px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.contractor-avatar-button:hover {
+  border-color: #a8d4f5;
+  box-shadow: 0 8px 22px rgba(13, 37, 63, 0.10);
+  transform: translateY(-1px);
+}
+
+.contractor-company-chip {
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 7px 12px;
+  border: 1px solid var(--contractor-card-border);
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.contractor-content {
+  min-width: 0;
+  padding: 28px;
+}
+
+.contractor-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+}
+
+.contractor-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 68px;
+}
+
+.contractor-page-header h1.ant-typography {
+  margin: 0;
+  color: #111827;
+  font-size: 30px;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.contractor-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--contractor-active);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.contractor-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.contractor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.contractor-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.contractor-section-header h3.ant-typography {
+  margin: 0 0 2px;
+}
+
+.contractor-card {
+  border-color: var(--contractor-card-border);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(13, 37, 63, 0.04);
+}
+
+.contractor-section-card > .ant-card-head {
+  min-height: 54px;
+  border-bottom-color: #edf3f8;
+}
+
+.contractor-section-card > .ant-card-head .ant-card-head-title > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.contractor-toolbar-card {
+  border-color: var(--contractor-card-border);
+}
+
+.contractor-toolbar,
+.contractor-toolbar-card .ant-space {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+}
+
+.contractor-filter-card .ant-card-body {
+  padding: 14px;
+}
+
+.contractor-filter {
+  min-width: 180px;
+}
+
+.contractor-search {
+  width: min(360px, 100%);
+}
+
+.contractor-table-card .ant-card-body {
+  padding: 0;
+}
+
+.contractor-table-card .ant-table-wrapper {
+  overflow-x: auto;
+}
+
+.contractor-data-table .ant-table {
+  border-radius: 8px;
+}
+
+.contractor-data-table .ant-table-thead > tr > th {
+  color: #475467;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: #f5f9fc;
+}
+
+.contractor-data-table .ant-table-tbody > tr {
+  transition: background-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.contractor-data-table .ant-table-tbody > tr:hover > td {
+  background: #f0f8ff !important;
+}
+
+.contractor-status {
+  margin-inline-end: 0;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.contractor-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.contractor-metric {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 126px;
+  padding: 16px;
+  border: 1px solid var(--contractor-card-border);
+  border-left: 4px solid var(--contractor-active);
+  border-radius: 8px;
+  text-align: left;
+  background: #ffffff;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease, background 0.16s ease;
+}
+
+.contractor-metric:hover {
+  border-color: #b9d8ef;
+  box-shadow: 0 10px 30px rgba(13, 37, 63, 0.08);
+  transform: translateY(-1px);
+}
+
+.contractor-metric-warning {
+  border-left-color: var(--contractor-warning);
+}
+
+.contractor-metric-success {
+  border-left-color: var(--contractor-success);
+}
+
+.contractor-metric-danger {
+  border-left-color: var(--contractor-danger);
+}
+
+.contractor-metric-info {
+  border-left-color: var(--contractor-active);
+}
+
+.contractor-metric-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  color: var(--contractor-active);
+  background: #e9f5ff;
+  font-size: 21px;
+}
+
+.contractor-metric-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.contractor-metric-copy strong {
+  color: #152033;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.contractor-metric-copy span:last-child {
+  color: var(--contractor-muted);
+  font-size: 13px;
+}
+
+.contractor-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(340px, 0.85fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.contractor-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.contractor-welcome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--contractor-card-border);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ffffff 0%, #edf7ff 100%);
+}
+
+.contractor-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 168px;
+  padding: 20px;
+  text-align: center;
+}
+
+.contractor-empty.compact {
+  min-height: 136px;
+}
+
+.contractor-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  color: var(--contractor-active);
+  background: #e9f5ff;
+  font-size: 20px;
+}
+
+.contractor-empty h4.ant-typography {
+  margin: 0 0 2px;
+}
+
+.contractor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.contractor-profile-hero {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+
+.contractor-profile-avatar {
+  width: 72px;
+  height: 72px;
+  font-size: 24px;
+}
+
+.contractor-comment {
+  padding: 14px;
+  border: 1px solid var(--contractor-card-border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.contractor-activity-card,
+.contractor-action-card,
+.contractor-info-card,
+.contractor-user-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--contractor-card-border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.contractor-action-card {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.contractor-action-card:hover {
+  border-color: #a8d4f5;
+  box-shadow: 0 8px 22px rgba(13, 37, 63, 0.08);
+  transform: translateY(-1px);
+}
+
+.contractor-action-card span:last-child,
+.contractor-activity-copy,
+.contractor-info-card div,
+.contractor-user-card div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.contractor-action-card small {
+  color: var(--contractor-muted);
+}
+
+.contractor-action-icon,
+.contractor-activity-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  color: var(--contractor-active);
+  background: #e9f5ff;
+}
+
+.contractor-timeline {
+  padding-top: 6px;
+}
+
+@media (min-width: 1600px) {
+  .contractor-metrics-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1450px) {
+  .contractor-metrics-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .contractor-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .contractor-header-meta .sp-profile-copy,
+  .contractor-company-chip {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .contractor-content {
+    padding: 18px;
+  }
+
+  .contractor-page-header,
+  .contractor-welcome {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .contractor-metrics-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 body {

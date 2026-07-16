@@ -19,6 +19,9 @@ class ContractorAuthContext:
     actor_id: UUID | None
     user: User | None = None
     legacy_contractor_id: UUID | None = None
+    primary_contractor_id: UUID | None = None
+    permissions: set[str] | None = None
+    roles: set[str] | None = None
 
 
 def dev_auth_enabled() -> bool:
@@ -107,11 +110,19 @@ def require_full_session(
 def require_csrf(
     request: Request,
     x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+    x_user_id: UUID | None = Header(default=None),
+    x_contractor_id: UUID | None = Header(default=None),
     csrf_cookie: str | None = Cookie(default=None, alias=settings.auth_csrf_cookie_name),
-    session=Depends(get_current_session),
+    access_cookie: str | None = Cookie(default=None, alias=settings.auth_access_cookie_name),
+    db: Session = Depends(get_db),
 ) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
+    session = session_from_access_cookie(db, access_cookie)
+    if session is None and dev_auth_enabled() and (x_user_id is not None or x_contractor_id is not None):
+        return
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication is required")
     if not x_csrf_token or not csrf_cookie or x_csrf_token != csrf_cookie:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF_TOKEN_INVALID")
     if token_hash(x_csrf_token) != session.csrf_token_hash:
@@ -193,6 +204,13 @@ def active_contractor_ids_for_user(user: User) -> set[UUID]:
     }
 
 
+def primary_contractor_id_for_user(user: User, contractor_ids: set[UUID]) -> UUID | None:
+    for membership in user.contractor_memberships:
+        if membership.is_primary and membership.contractor_id in contractor_ids:
+            return membership.contractor_id
+    return next(iter(contractor_ids), None)
+
+
 def get_current_contractor_ids(
     user: User = Depends(require_permission("contractor.requests.view")),
 ) -> set[UUID]:
@@ -204,35 +222,67 @@ def get_current_contractor_ids(
 
 def require_contractor_permission(permission_code: str):
     def dependency(
+        request: Request,
         x_user_id: UUID | None = Header(default=None),
         x_contractor_id: UUID | None = Header(default=None),
+        access_cookie: str | None = Cookie(default=None, alias=settings.auth_access_cookie_name),
         db: Session = Depends(get_db),
     ) -> ContractorAuthContext:
-        # TODO: Remove X-Contractor-Id fallback when real contractor auth exists.
-        if x_user_id is not None:
+        seed_rbac(db)
+        session = session_from_access_cookie(db, access_cookie)
+        user = load_user(db, session.user_id) if session is not None else None
+        if user is None and x_user_id is not None and dev_auth_enabled():
             user = get_current_user_stub(x_user_id=x_user_id, x_user_role=None, access_cookie=None, db=db)
+
+        if user is not None:
+            if not user.is_active or user.is_locked or not user.authentication_enabled:
+                audit_access_denied(db, request, user, (permission_code,))
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive or locked")
+            if user.user_type != UserType.CONTRACTOR:
+                audit_access_denied(db, request, user, (permission_code,))
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Contractor account is required")
             permissions = permission_codes_for_user(user)
+            role_codes = {item.role.code for item in user.roles if item.role and item.role.is_active}
+            if not role_codes.intersection({"CONTRACTOR_MANAGER", "CONTRACTOR_USER"}):
+                audit_access_denied(db, request, user, (permission_code,))
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Contractor role is required")
             if permission_code not in permissions:
-                write_audit(
-                    db,
-                    "ACCESS_DENIED_CONTRACTOR",
-                    "Permission",
-                    None,
-                    new_data={"permissions": [permission_code]},
-                    actor_id=user.id,
-                    actor_type="RBAC",
-                )
-                db.commit()
+                audit_access_denied(db, request, user, (permission_code,))
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
             contractor_ids = active_contractor_ids_for_user(user)
             if not contractor_ids:
+                write_audit(
+                    db,
+                    "CONTRACTOR_MEMBERSHIP_MISSING",
+                    "ContractorMembership",
+                    None,
+                    new_data={"path": request.url.path},
+                    actor_id=user.id,
+                    actor_type="CONTRACTOR_PORTAL",
+                )
+                db.commit()
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contractor context not found")
-            return ContractorAuthContext(contractor_ids=contractor_ids, actor_id=user.id, user=user)
+            return ContractorAuthContext(
+                contractor_ids=contractor_ids,
+                actor_id=user.id,
+                user=user,
+                primary_contractor_id=primary_contractor_id_for_user(user, contractor_ids),
+                permissions=permissions,
+                roles=role_codes,
+            )
+
         if not dev_auth_enabled():
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication is required")
         if x_contractor_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Contractor context is required")
-        return ContractorAuthContext(contractor_ids={x_contractor_id}, actor_id=x_contractor_id, legacy_contractor_id=x_contractor_id)
+        return ContractorAuthContext(
+            contractor_ids={x_contractor_id},
+            actor_id=x_contractor_id,
+            legacy_contractor_id=x_contractor_id,
+            primary_contractor_id=x_contractor_id,
+            permissions={permission_code},
+            roles={"LEGACY_DEV_CONTRACTOR"},
+        )
 
     return dependency
 
