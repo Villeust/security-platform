@@ -1,104 +1,103 @@
 # Architecture
 
-Security Platform построена как единое веб-приложение с разделением ответственности между frontend, API, сервисной логикой, слоем доступа к данным и PostgreSQL.
+Security Platform is a modular pre-production platform foundation for physical
+security operations. The current local implementation uses a React frontend,
+FastAPI backend and SQLite development database.
 
-```mermaid
-flowchart TD
-    User[User]
-    FE[Frontend<br/>React + TypeScript]
-    API[Backend API<br/>FastAPI]
-    Services[Services]
-    Repositories[Repositories]
-    Database[(PostgreSQL)]
+## Frontend
 
-    User --> FE
-    FE --> API
-    API --> Services
-    Services --> Repositories
-    Repositories --> Database
-```
+- React.
+- TypeScript.
+- Vite.
+- React Router.
+- Ant Design.
+- Shared design-system primitives.
+- Internal workspace.
+- Contractor Portal.
+- Workflow Center.
+- Frontend stability utilities:
+  - global and route-level error boundaries;
+  - centralized API error parsing;
+  - correlation reference support;
+  - route-level lazy loading;
+  - async-safety hooks for cancellation and duplicate-submit protection.
 
-## Application Layers
+## Backend
 
-| Layer | Responsibility |
-| --- | --- |
-| Frontend | Web interface, routing, forms, dashboards and user workflows. |
-| Backend API | REST endpoints, request validation, OpenAPI documentation and dependency wiring. |
-| Services | Business logic, orchestration, validation rules and module behavior. |
-| Repositories | Data access boundary and query encapsulation where the module needs it. |
-| Database | PostgreSQL persistence managed through SQLAlchemy and Alembic migrations. |
+- FastAPI application.
+- SQLAlchemy models and sessions.
+- Alembic migrations.
+- Pydantic request/response schemas.
+- Cookie authentication.
+- CSRF protection.
+- RBAC dependencies.
+- Contractor tenant isolation.
+- Workflow Engine.
+- Workflow Center APIs.
+- Audit/history recording.
+- Outbox records.
+- Structured logging.
+- Correlation ID middleware.
+- Health, readiness and version endpoints.
+- Security middleware for headers, request limits and production configuration
+  validation.
 
-## Separation of Responsibilities
+## Database
 
-The platform keeps business logic out of UI components and avoids coupling HTTP handlers directly to persistence details. API routes expose module capabilities, services coordinate business operations, and database models represent persisted state.
+Local development uses SQLite through `backend/dev.db`. Alembic migrations are
+the source of schema changes.
 
-Current implementation already follows this direction in the Contractor Requests module:
+PostgreSQL is the documented production target, but it is not the active local
+database in this repository state. Redis-backed distributed services are also
+planned infrastructure, not current runtime dependencies.
 
-- API routes expose request, reference data, contractor and health endpoints.
-- Service logic validates request scope, applies premise contacts and assigns contractors by work type.
-- SQLAlchemy models define persisted entities and relationships.
-- Alembic manages schema evolution.
+## Modules
 
-## Module Structure
+Implemented modules:
 
-```mermaid
-flowchart LR
-    Platform[Security Platform]
-    Platform --> Core[Core Platform]
-    Platform --> Modules[Modules]
+- Contractor Requests.
+- Contractor Portal.
+- Administration.
+- RBAC and local authentication.
+- Internal dashboard.
+- Platform Workflow Engine.
+- Workflow Center.
+- Platform Doctor and operational scripts.
 
-    Core --> API[API Foundation]
-    Core --> UI[Frontend Shell]
-    Core --> Data[Database and Migrations]
-    Core --> Tools[Developer Toolkit]
+Planned modules:
 
-    Modules --> CR[Contractor Requests]
-    Modules --> AC[Access Control<br/>Planned]
-    Modules --> CCTV[CCTV<br/>Planned]
-    Modules --> VM[Visitor Management<br/>Planned]
-    Modules --> IM[Incident Management<br/>Planned]
-    Modules --> MON[Monitoring<br/>Planned]
-    Modules --> REP[Reports & Analytics<br/>Planned]
-```
-
-Contractor Requests is the first implemented business module. Planned modules should reuse the same platform foundation instead of introducing isolated applications.
-
-## Frontend and Backend Interaction
-
-Frontend communicates with Backend API over HTTP. Backend responses are documented through Swagger/OpenAPI and should remain stable, versioned and predictable.
-
-| Direction | Description |
-| --- | --- |
-| Frontend to API | UI sends JSON requests to REST endpoints. |
-| API to Services | Routes delegate business decisions to service functions. |
-| Services to Database | Services validate and persist data through SQLAlchemy sessions and model relationships. |
-| API to Frontend | API returns structured JSON responses and standard HTTP status codes. |
-
-## Platform Scalability
-
-Security Platform is designed to scale by adding modules around a shared core:
-
-- shared routing and API conventions;
-- shared frontend design system and navigation patterns;
-- shared database migration process;
-- consistent module boundaries;
-- common developer scripts and documentation;
-- clear roadmap for workflow, authentication, notifications, monitoring and reports.
-
-The goal is to grow Security Platform into a portfolio of security services while keeping operational and development practices unified.
-
-## Operational Foundation
-
-The platform version is governed by the root `VERSION` file. Backend metadata, OpenAPI, `/api/v1/version`, readiness and frontend version displays synchronize to that source and package metadata is kept aligned.
-
-Platform Doctor is the local operational diagnostic utility. It groups checks into Core, Security, Infrastructure and Optional Integrations, then retains detailed diagnostics for database, Alembic, Workflow Engine, RBAC, auth, contractor data, seed, storage and migration recovery. Startup scripts consume Doctor JSON and abort on errors unless `-Force` is explicitly supplied.
-
-Development startup and stop scripts are part of the platform foundation. Startup validates migrations, Doctor health, backend readiness, health, version and frontend reachability. Stop only targets processes that can be verified as belonging to the current repository and reports Windows access-denied conditions without killing unrelated Python or Node processes.
+- Notification Center.
+- Scheduler.
+- Reporting and SLA analytics.
+- Monitoring Center.
+- Audit and Security Center.
 
 ## Workflow Engine And Workflow Center
 
-The generic Workflow Engine is a platform service, not a Contractor Requests subsystem. Its persistence model stores workflow definitions, states, transitions, instances, transition executions, SLA policies and timers, idempotency records and outbox events. Business modules connect through adapter boundaries so the engine can observe and validate module entities without taking over module APIs.
+The Workflow Engine stores generic definitions, states, transitions, instances,
+transition executions, SLA policies/timers and outbox events. It includes
+idempotency and optimistic locking foundations.
 
-Workflow Center is the administrative and operational surface for that engine. It is exposed under `/api/v1/admin/workflow-center` and `/admin/workflow-center`, guarded by existing RBAC permissions such as `workflows.view`, `workflows.manage`, `workflows.publish`, `workflows.instances.view` and `workflows.sla.view`. Read views are generic and safe for operators: definition catalog, version list, validation, instance explorer, SLA center, outbox monitor, process audit and platform health.
+Workflow Center exposes administrative and operational views for definitions,
+versions, validation, instances, SLA, outbox, audit and platform health. It is
+permission-protected and does not replace Contractor Requests public APIs.
 
-Phase 3 deliberately does not redesign Contractor Requests. Existing request APIs, approved statuses, assignment workflow, request history, Contractor Portal behavior, authentication, RBAC and tenant isolation remain the source of truth. The architecture keeps room for future parallel workflows, sub-workflows, scheduled transitions, event-driven transitions, external integrations and BPMN-like execution without implementing those capabilities in this phase.
+Future workflow capabilities such as BPMN-like execution, scheduled
+transitions, event-driven transitions, sub-workflows and external integrations
+remain planned.
+
+## Operational Foundation
+
+The root `VERSION` file is authoritative. Backend metadata, OpenAPI,
+`/api/v1/version`, readiness and frontend display should remain aligned to it.
+
+Platform Doctor validates the local development environment, including Python,
+database, Alembic, Workflow, RBAC, authentication, Contractor data, seed,
+storage and configuration. Startup scripts consume Doctor output before
+starting services.
+
+## Boundaries
+
+Frontend route guards improve user experience but are not a security boundary.
+Backend authentication, RBAC, tenant isolation and CSRF enforcement remain the
+source of truth.

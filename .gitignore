@@ -1,14 +1,58 @@
+# Environment and local configuration
 .env
 **/.env
+*.env.local
+frontend/.env
+frontend/.env.*
+!.env.example
+!**/.env.example
+
+# Python and test caches
 __pycache__/
+*.py[cod]
 .pytest_cache/
+.mypy_cache/
+.coverage
+coverage/
+htmlcov/
 .venv/
 .uv-venv/
 .uv-cache/
+
+# Runtime and logs
 .dev-runtime/
+*.log
+*.pid
+*.lock
+
+# Databases and local migration/recovery artifacts
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.bak
+*.backup
+*.tmp
+*.tmp.db
+backend/dev.db
+backend/*.db
+backend/*.bak
+backend/*.backup
+backend/*.workflow-recovery-*.bak
+backend/dev.db.workflow-recovery-*.bak
+
+# Storage: keep only directory placeholder tracked
 backend/storage/*
 !backend/storage/.gitkeep
-*.db
+
+# Frontend
 node_modules/
+frontend/node_modules/
 dist/
+frontend/dist/
+frontend/node_modules/.vite/
+frontend/node_modules/.vite-temp/
+
+# OS/editor
 .DS_Store
+Thumbs.db
