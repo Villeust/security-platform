@@ -1,23 +1,38 @@
 # Documentation
 
-Документация Security Platform разделена на отдельные документы, чтобы README оставался краткой входной страницей, а технические детали были доступны по назначению.
+This index maps the current Security Platform documentation.
 
-| Документ | Описание |
-| --- | --- |
-| [Architecture](ARCHITECTURE.md) | Архитектура платформы, слои приложения, модули и масштабирование. |
-| [Roadmap](ROADMAP.md) | Дорожная карта развития Security Platform по версиям. |
-| [ERD](ERD.md) | Mermaid ER Diagram для существующих сущностей Contractor Requests. |
-| [API Guidelines](API_GUIDELINES.md) | Корпоративные правила разработки REST API. |
-| [Development Guide](DEVELOPMENT.md) | Локальный запуск, тесты, seed, Git Flow и Pull Request-процесс. |
+## Architecture
 
-Additional operational reference:
+- [Architecture](ARCHITECTURE.md)
+- [Entity Relationship Diagram](ERD.md)
+- [Workflow Engine](WORKFLOW_ENGINE.md)
 
-- [Security](SECURITY.md) covers security headers, CORS, CSRF, cookies, limits, production validation and operational hardening.
+## Development
 
-## Images and Diagrams
+- [Development Guide](DEVELOPMENT.md)
+- [API Guidelines](API_GUIDELINES.md)
 
-| Файл | Назначение |
-| --- | --- |
-| [security-platform-logo.svg](images/security-platform-logo.svg) | SVG-логотип Security Platform. |
-| [architecture.mmd](images/architecture.mmd) | Mermaid-диаграмма архитектуры платформы. |
-| [modules.mmd](images/modules.mmd) | Mermaid-диаграмма модулей платформы. |
+## Security
+
+- [Security](SECURITY.md)
+
+## Planning
+
+- [Roadmap](ROADMAP.md)
+- [Releases](releases/README.md)
+
+## Operations
+
+- Platform Doctor: see [Development Guide](DEVELOPMENT.md#platform-doctor)
+- Migration validation: see [Development Guide](DEVELOPMENT.md#migration-validation)
+- Partial migration recovery: see [Workflow Engine](WORKFLOW_ENGINE.md)
+- Startup and stop scripts: see [Development Guide](DEVELOPMENT.md#start)
+- Health/readiness/version endpoints: see [API Guidelines](API_GUIDELINES.md)
+
+## Release Documents
+
+- [v0.8.0 release notes](releases/v0.8.0.md)
+- [Next release notes](releases/NEXT_RELEASE.md)
+- [Release checklist](releases/RELEASE_CHECKLIST.md)
+- [Phase E acceptance](releases/PHASE_E_ACCEPTANCE.md)

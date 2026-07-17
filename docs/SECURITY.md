@@ -1,92 +1,103 @@
 # Security
 
-Security Platform uses cookie sessions, CSRF protection, RBAC and tenant checks. Phase B adds HTTP hardening around those existing controls without changing business behavior. Phase C adds operational validation around the same controls through Platform Doctor and startup checks.
+Security Platform includes implemented security controls for local
+pre-production development. This document describes actual controls and known
+gaps without claiming production completion.
 
-## Security Headers
+## Implemented Controls
 
-All backend responses receive:
+### Cookie Authentication
 
-- `X-Content-Type-Options: nosniff`
-- `Referrer-Policy: strict-origin-when-cross-origin`
-- `X-Frame-Options`
-- `Content-Security-Policy`
-- `Permissions-Policy`
+Local users authenticate with cookie sessions. Auth state is not stored as a
+browser localStorage token.
 
-Development CSP allows local Vite connections and Swagger assets from `cdn.jsdelivr.net`. Production CSP is stricter and limits scripts, connections and framing to the application origin.
+### CSRF
 
-`Strict-Transport-Security` is emitted only when `ENVIRONMENT=production` and `HSTS_ENABLED=true`.
+State-changing API routes require CSRF validation unless explicitly exempted by
+the backend. The test suite includes CSRF route coverage checks.
 
-Auth, admin and attachment download responses use `Cache-Control: no-store`.
+### RBAC
 
-## CORS
+Backend dependencies enforce role and permission checks. Frontend visibility is
+permission-aware but is not the security boundary.
 
-`BACKEND_CORS_ORIGINS` must contain explicit HTTP or HTTPS origins. Wildcards are rejected because credentials are enabled.
+### Tenant Isolation
 
-Development may use configured localhost and `127.0.0.1` origins. Production rejects missing, malformed or localhost origins.
+Contractor users are scoped to contractor memberships. Contractor Portal APIs
+return tenant-safe data and must not expose foreign contractor data.
 
-## Cookies
+### Password Policy
 
-Session and refresh cookies are `HttpOnly`. The CSRF cookie remains readable by the frontend for the current double-submit CSRF design.
+Local authentication supports password policy validation, temporary password
+flow, forced password change, password expiry configuration and account lockout.
 
-Cookies use:
+### Correlation IDs
 
-- explicit `SameSite`;
-- restricted `Path`;
-- `Secure` in production;
-- no `Domain` unless configured.
+Correlation IDs flow through request handling, logs, audit/workflow records
+where technically available and response headers. Frontend errors can display a
+correlation reference for support.
 
-Logout deletes cookies with matching path, domain, secure and SameSite attributes.
+### Structured Logging And Redaction
 
-## CSRF
+The backend uses a centralized logging pipeline with development console output
+and production JSON output. Logs should avoid secrets and sensitive payloads.
 
-Cookie-authenticated mutations require `X-CSRF-Token` matching the CSRF cookie and server-side session hash.
+### Security Headers
 
-Documented exemptions:
+The backend emits centralized security headers, including CSP configuration,
+frame restrictions and other browser hardening headers appropriate to the
+environment.
 
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/refresh`
+### CORS
 
-Development identity headers are not cookie sessions. They are supported for local automation, with Workflow Center retaining explicit CSRF regression coverage for published mutation routes.
+CORS configuration validates allowed origins. Production configuration rejects
+unsafe localhost or wildcard-style origin settings.
 
-## Request And Upload Limits
+### Cookies
 
-Configurable limits:
+Cookie settings vary by environment. Production configuration must use secure
+cookie attributes and HTTPS-aware settings.
 
-- `MAX_REQUEST_BODY_BYTES`
-- `MAX_JSON_BODY_BYTES`
-- `MAX_MULTIPART_BODY_BYTES`
-- `MAX_UPLOAD_FILE_BYTES`
-- `MAX_FILES_PER_REQUEST`
+### Request And Upload Limits
 
-Oversized requests return standardized `413` errors with correlation IDs. Attachment uploads also enforce file extension, MIME type, filename safety and the stricter of the legacy 20 MB limit and `MAX_UPLOAD_FILE_BYTES`.
+Backend request and upload limits protect against oversized JSON and multipart
+payloads. Reverse proxies should enforce equal or stricter limits in production.
 
-Production reverse proxies should enforce matching or lower limits, for example `client_max_body_size` in Nginx.
+### Safe File Downloads
 
-## Pagination And Search
+Attachment download responses use safer filenames and headers and preserve
+tenant/permission checks.
 
-List endpoints use bounded `skip`, `limit` and search lengths. Sortable fields are explicit allowlists; arbitrary ORM attribute names are not accepted.
+### Standardized Errors
 
-## Downloads
+API errors use a standardized envelope with machine-readable codes,
+correlation ID, timestamp and request path. Raw internal payloads and secrets
+must not be exposed.
 
-Protected attachment downloads use attachment disposition, controlled content type, `nosniff`, `no-store`, safe filenames and no filesystem path exposure.
+### Production Configuration Validation
 
-## Production Validation
+Production startup validates required security settings and fails fast on
+unsafe defaults.
 
-Production startup validates:
+## Optional Integrations
 
-- explicit approved CORS origins;
-- non-placeholder auth and encryption secrets;
-- no localhost production origins;
-- `PUBLIC_BASE_URL` must be HTTPS;
-- `HSTS_ENABLED=true`;
-- `ALLOW_DEV_AUTH_HEADERS=false`;
-- `APP_DEBUG=false`;
-- compatible cookie/HTTPS settings.
+SMTP, LDAP and ADFS configuration can be present or intentionally disabled.
+They remain optional for readiness when disabled by configuration.
 
-Secret values are never printed in validation errors.
+## Not Yet Production Complete
 
-Platform Doctor validates CSP, security headers, cookie configuration, CSRF route inventory and CORS configuration. JSON output reports only configured/not-configured flags and never prints secrets.
+- External penetration test.
+- Real production secrets manager.
+- Redis-backed distributed rate limiting.
+- Antivirus or malware scanning for uploads.
+- Production LDAP/ADFS validation.
+- Centralized SIEM/log transport.
+- PostgreSQL migration and high availability.
+- Backup and disaster recovery plan.
+- Production monitoring and alerting.
+- Formal incident-response process.
 
-## Rate Limiting
+## Release Guidance
 
-Phase B adds configuration for a future rate-limiting layer. Distributed production enforcement should use a shared backend such as Redis. No scheduler, worker or Redis dependency is introduced in this phase.
+Do not claim production readiness until the production-hardening items above
+are completed, validated and approved.

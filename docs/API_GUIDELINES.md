@@ -1,124 +1,83 @@
 # API Guidelines
 
-This document defines baseline API rules for Security Platform modules. Existing endpoints should align with these conventions as the platform evolves.
+Swagger/OpenAPI is the endpoint source of truth:
 
-## REST
+http://127.0.0.1:8000/docs
 
-APIs should be resource-oriented and use HTTP semantics consistently.
+## Version Prefix
 
-| Method | Usage |
-| --- | --- |
-| `GET` | Read resources. |
-| `POST` | Create resources or execute explicit commands. |
-| `PATCH` | Partially update resources. |
-| `DELETE` | Remove resources where deletion is supported. |
+Public API routes use the `/api/v1` prefix. Breaking API changes should use a
+new version or an explicit migration path.
 
-## UUID
+## Authentication
 
-Primary identifiers should use UUID values for public API contracts. UUIDs keep identifiers opaque and stable across modules.
+APIs use cookie authentication for browser sessions. Do not introduce token
+storage in browser localStorage for authenticated application flows.
 
-## snake_case
+## CSRF
 
-JSON request and response fields should use `snake_case`.
+State-changing routes require CSRF validation unless explicitly exempted by the
+backend. Mutation clients must send the expected CSRF header/token.
 
-Examples:
+## Standard Error Envelope
 
-- `facility_id`
-- `work_type_ids`
-- `request_number`
-- `created_at`
+API errors should use the centralized error envelope:
 
-## HTTP Status Codes
+- machine-readable error code;
+- message;
+- detail where safe;
+- correlation ID;
+- timestamp;
+- request path.
 
-| Code | Meaning |
-| --- | --- |
-| `200 OK` | Successful read or update. |
-| `201 Created` | Resource created. |
-| `204 No Content` | Successful action with no body. |
-| `400 Bad Request` | Invalid request format or unsupported operation. |
-| `404 Not Found` | Resource does not exist. |
-| `409 Conflict` | Business or uniqueness conflict. |
-| `422 Unprocessable Entity` | Validation error. |
-| `500 Internal Server Error` | Unexpected server error. |
+Do not add ad-hoc `HTTPException(detail="...")` responses for new code when a
+centralized application error exists.
+
+## Correlation IDs
+
+Clients may send a valid correlation ID header. The backend returns the active
+correlation ID in the response and includes it in logs and audit/workflow
+records where technically available.
 
 ## Validation
 
-Validation should happen at the boundary through Pydantic schemas and inside services for business rules that require database context.
-
-Examples:
-
-- required fields;
-- UUID format;
-- entity existence;
-- relationship consistency;
-- module-specific business constraints.
+Validation failures should return structured 422 responses through the standard
+error handling path. Validation messages must not expose secrets.
 
 ## Pagination
 
-List endpoints should support pagination before datasets become large.
+List endpoints should use explicit page/size or offset/limit parameters with
+server-side maximums. Avoid unbounded list responses for operational data.
 
-Recommended parameters:
+## Sorting And Filtering
 
-- `limit`
-- `skip`
+Sort fields must use explicit allowlists. Do not pass arbitrary client-provided
+field names into ORM order clauses.
 
-`skip` must be non-negative. `limit` must have a server-side maximum. Responses should remain predictable and should not expose unbounded datasets by default.
+## Idempotency
 
-## Filtering
+Use idempotency keys where supported by the Workflow Engine and other mutation
+surfaces that need safe retry behavior.
 
-Filtering parameters should be explicit and documented in OpenAPI.
+## Response Models
 
-Examples:
+Routes should return explicit response schemas instead of raw ORM objects.
+Contractor-facing APIs must use tenant-safe DTOs.
 
-- `city_id`
-- `facility_id`
-- `status`
-- `is_active`
+## Backward Compatibility
 
-Search parameters must have bounded length. Sort fields must use an explicit allowlist and must not be mapped from arbitrary ORM attribute names.
+Preserve existing public API routes, Contractor Requests behavior, approved
+statuses, RequestHistory semantics, assignment workflow, tenant isolation,
+authentication behavior, RBAC and CSRF semantics unless a change is explicitly
+approved.
 
-## Error Responses
+## Health, Readiness And Version
 
-Error responses should be structured, stable and useful for frontend handling.
+Operational endpoints:
 
-Current standard shape:
+- `GET /api/v1/health`
+- `GET /api/v1/readiness`
+- `GET /api/v1/version`
 
-```json
-{
-  "error": {
-    "code": "RESOURCE_NOT_FOUND",
-    "message": "Запрошенный ресурс не найден.",
-    "details": null
-  },
-  "correlation_id": "uuid",
-  "timestamp": "2026-07-17T00:00:00+00:00",
-  "path": "/api/v1/example",
-  "detail": "Legacy-compatible detail"
-}
-```
-
-`detail` is preserved for backward compatibility. New frontend code should prefer `error.code` and `correlation_id`.
-
-## Security
-
-Cookie-authenticated mutation endpoints must include CSRF protection unless they are documented exemptions such as login and refresh. File downloads must use safe attachment disposition, `nosniff`, and no filesystem path leakage. Oversized requests return `413` using the standard error shape.
-
-## Versioning
-
-API routes should remain versioned under a stable prefix such as `/api/v1`. Breaking changes should be introduced through a new version or a controlled migration path.
-
-## OpenAPI
-
-FastAPI-generated Swagger/OpenAPI documentation is part of the developer contract. Endpoints, schemas, status codes and examples should remain clear enough for new module teams to integrate quickly.
-
-## Dependency Injection
-
-Use FastAPI dependencies for shared concerns such as database sessions, authentication context and module-level access checks.
-
-## Repository Pattern
-
-Repository boundaries should be introduced where query complexity or reuse justifies it. Simple modules may use SQLAlchemy session operations directly inside service functions, but complex data access should be isolated.
-
-## Service Layer
-
-Business logic should live in service functions or service classes, not in frontend components or API route handlers. Services should coordinate validation, state transitions, assignments and persistence.
+Readiness verifies core runtime dependencies and should not fail for optional
+SMTP, LDAP or ADFS integrations when they are intentionally disabled.

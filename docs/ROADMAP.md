@@ -1,91 +1,73 @@
 # Roadmap
 
-Security Platform is in active development. The roadmap separates completed foundation work from planned platform capabilities.
+Security Platform is in active pre-production development. This roadmap reflects
+the actual implemented repository state and avoids marking planned capabilities
+as complete before they exist.
 
-| Version | Scope | Status |
-| --- | --- | --- |
-| v0.4 | Security Platform Foundation | Done |
-| v0.5 | Workflow Engine foundation and Workflow Center | In progress |
-| v0.6 | Attachments, Comments, Notifications | Planned |
-| v0.7 | Authentication, Roles, Permissions | Planned |
-| v0.8 | Platform Stabilization operational baseline | Current |
-| v0.9 | Monitoring, Reports | Planned |
-| v1.0 | Production Release | Future |
+## Completed
 
-## v0.4
+- Foundation.
+- Contractor Requests.
+- Workflow and collaboration.
+- Administration and RBAC.
+- Local authentication.
+- Contractor Portal.
+- Unified internal dashboard and design system.
+- Platform Workflow Engine.
+- Workflow Center.
+- Platform Stabilization A-D.
 
-Status: Done
+## Current
 
-- Core FastAPI backend.
-- React and TypeScript frontend.
-- PostgreSQL persistence.
-- Alembic migrations.
-- Swagger/OpenAPI documentation.
-- Docker Compose support.
-- Developer start/stop scripts.
-- Health check endpoint.
-- Demo seed.
-- Contractor Requests MVP.
+- Release Readiness / Phase E.
 
-## v0.5
+## Next
 
-Status: In progress
+Notification Center and Scheduler are the recommended `v0.9.0` milestone.
 
-- Generic backend Workflow Engine foundation.
-- Contractor Request workflow integration through adapters while preserving existing request APIs.
-- Platform Doctor diagnostics for environment, migrations, RBAC, seed data and workflow health.
-- Workflow Center for definitions, versions, validation, instances, SLA, outbox, audit and platform health.
-- Not included yet: Phase 4 automation, scheduled transitions, event-driven transitions, external integrations, BPMN-like execution or visual diagram authoring.
+Scope preview:
 
-## v0.6
+- notification domain model;
+- templates;
+- recipient resolution;
+- in-app notifications;
+- email channel;
+- outbox processing;
+- retries;
+- scheduling;
+- SLA reminders;
+- password-expiry notifications;
+- delivery audit;
+- channel preferences.
 
-Status: Planned
+## Planned
 
-- Attachments.
-- Comments.
-- Notifications.
+- Production LDAP/ADFS validation.
+- Reporting and SLA analytics.
+- Audit and Security Center.
+- Monitoring Center.
+- PostgreSQL/Redis production infrastructure.
+- CI/CD and deployment hardening.
+- v1.0 production release.
 
-## v0.7
+## Version Notes
 
-Status: Planned
+- Current application version: `0.8.0`.
+- Existing Git tag: `v0.8.0`.
+- Current development line: post-v0.8.0 stabilization.
+- Recommended next milestone: `v0.9.0`.
+- Governance warning: a historical `v0.9.0` Git tag already exists and must be
+  resolved before any future tag is created.
 
-- Authentication.
-- Roles.
-- Permissions.
+Do not call the current untagged development state an official v0.9.0 release.
 
-## v0.8
+## Not Implemented Yet
 
-Status: Current
-
-- Authoritative platform version `0.8.0`.
-- Platform Doctor 2.0 with JSON, summary and safe fix modes.
-- Startup and stop reliability hardening.
-- Migration validation command.
-- Production environment validation for secrets, HTTPS, cookies, CORS and dev-mode controls.
-
-## v0.9
-
-Status: Planned
-
-- Monitoring.
-- Reports.
-- Analytics-oriented views.
-
-## v1.0
-
-Status: Future
-
-- Production Release.
-- Stabilized platform baseline.
-- Operational readiness.
-
-## Long-term Vision
-
-Security Platform should become a unified enterprise environment for physical security operations. Long-term development should focus on:
-
-- expanding the module catalog;
-- connecting operational security workflows;
-- improving observability and reporting;
-- standardizing access, roles and approvals;
-- keeping a single user experience across all security services;
-- supporting future integration with enterprise systems where required.
+- Notification Center as a platform service.
+- Scheduler.
+- BPMN execution.
+- Scheduled workflow transitions.
+- Event-driven workflow automation.
+- External workflow integrations.
+- PostgreSQL/Redis production deployment.
+- Production monitoring and centralized log transport.
