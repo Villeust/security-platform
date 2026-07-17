@@ -8,13 +8,14 @@ import app.models.admin  # noqa: F401
 import app.models.reference_data  # noqa: F401
 import app.models.requests  # noqa: F401
 import app.models.workflow  # noqa: F401
+import app.models.notifications  # noqa: F401
 from app.db.base import Base
 from app.core.version import platform_version
 from app.scripts.platform_doctor import ERROR, OK, WARNING, DoctorReport, render_summary, render_text, run_doctor
 from app.services.contractor_request_workflow import seed_contractor_request_workflow_definition
 from app.services.rbac_service import seed_rbac
 
-HEAD_REVISION = "20260717_0011"
+HEAD_REVISION = "20260717_0012"
 
 def write_env(path: Path) -> Path:
     path.write_text(

@@ -63,6 +63,15 @@ PERMISSIONS: dict[str, tuple[str, str | None]] = {
     "workflows.instances.transition": ("Execute workflow transitions", None),
     "workflows.sla.view": ("View workflow SLA policies and timers", None),
     "workflows.sla.manage": ("Manage workflow SLA policies", None),
+    "notifications.view": ("View own notifications", None),
+    "notifications.manage": ("Manage notification center", None),
+    "notifications.templates.view": ("View notification templates", None),
+    "notifications.templates.manage": ("Manage notification templates", None),
+    "notifications.delivery.view": ("View notification deliveries", None),
+    "notifications.delivery.retry": ("Retry notification deliveries", None),
+    "notifications.preferences.manage": ("Manage notification preferences", None),
+    "notifications.scheduler.view": ("View notification scheduler", None),
+    "notifications.scheduler.manage": ("Manage notification scheduler", None),
 }
 
 ALL_PERMISSION_CODES = set(PERMISSIONS)
@@ -83,6 +92,8 @@ SECURITY_ADMIN_PERMISSIONS = ALL_PERMISSION_CODES - {
     "contractor.company.view",
     "contractor.team.view",
     "contractor.notifications.view",
+    "notifications.scheduler.view",
+    "notifications.scheduler.manage",
 }
 
 SECURITY_OPERATOR_PERMISSIONS = {
@@ -97,6 +108,7 @@ SECURITY_OPERATOR_PERMISSIONS = {
     "reference_data.view",
     "workflows.instances.view",
     "workflows.instances.transition",
+    "notifications.view",
 }
 
 CONTRACTOR_PERMISSIONS = {
@@ -126,6 +138,7 @@ VIEWER_PERMISSIONS = {
     "requests.view",
     "reference_data.view",
     "workflows.instances.view",
+    "notifications.view",
 }
 
 SECURITY_ADMIN_PERMISSIONS = SECURITY_ADMIN_PERMISSIONS | {
@@ -141,6 +154,13 @@ SECURITY_ADMIN_PERMISSIONS = SECURITY_ADMIN_PERMISSIONS | {
     "admin.auth_mappings.view",
     "admin.auth_mappings.manage",
     "admin.connection_logs.view",
+    "notifications.view",
+    "notifications.manage",
+    "notifications.templates.view",
+    "notifications.templates.manage",
+    "notifications.delivery.view",
+    "notifications.delivery.retry",
+    "notifications.preferences.manage",
 }
 
 ROLE_PERMISSION_CODES: dict[str, set[str]] = {

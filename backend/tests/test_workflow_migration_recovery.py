@@ -14,7 +14,7 @@ from app.scripts.recover_partial_workflow_migration import (
 from app.scripts.seed_demo import run_seed
 from app.services.rbac_service import seed_rbac
 
-HEAD_REVISION = "20260717_0011"
+HEAD_REVISION = "20260717_0012"
 
 
 def configure_database(monkeypatch, tmp_path: Path) -> Path:
